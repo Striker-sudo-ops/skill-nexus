@@ -1,8 +1,10 @@
 import requests
 from datetime import datetime, timedelta
+from typing import Optional
 from sqlalchemy.orm import Session
-from app.models.entities import Job, JobSkill, Skill, DistrictIntelligence, Employer, User
+from app.models.entities import Job, JobSkill, Skill, DistrictIntelligence, Employer, User, SystemSetting
 from app.core.security import hash_password
+
 
 # Maharashtra cities with coordinates
 MH_CITIES = [
@@ -298,9 +300,73 @@ def sync_maharashtra_districts(db: Session) -> int:
     return count
 
 
+BASELINE_SKILLS = [
+    {"name": "Python", "domain": "IT", "desc": "Backend programming, APIs and automation", "salary": 1200000, "score": 92.0},
+    {"name": "React", "domain": "IT", "desc": "Modern component-based frontend web framework", "salary": 1000000, "score": 90.0},
+    {"name": "Docker", "domain": "IT", "desc": "Containerization and cloud microservices packaging", "salary": 1300000, "score": 88.0},
+    {"name": "AWS", "domain": "IT", "desc": "Cloud computing infrastructure & deployment pipelines", "salary": 1400000, "score": 93.0},
+    {"name": "Java", "domain": "IT", "desc": "Enterprise backend, microservices & distributed computing", "salary": 1100000, "score": 86.0},
+    {"name": "Machine Learning", "domain": "Data Science", "desc": "Predictive modeling, neural networks & scikit-learn", "salary": 1600000, "score": 96.0},
+    {"name": "SQL", "domain": "Data Science", "desc": "Relational query optimization and data analytics", "salary": 1050000, "score": 91.0},
+    {"name": "Data Visualization", "domain": "Data Science", "desc": "Executive dashboarding and telemetry visualization", "salary": 1100000, "score": 84.0},
+    {"name": "AutoCAD", "domain": "Mechanical", "desc": "Computer-aided engineering drafting and modeling", "salary": 600000, "score": 72.0},
+    {"name": "SolidWorks", "domain": "Mechanical", "desc": "3D parametric CAD modeling and mechanical assemblies", "salary": 750000, "score": 85.0},
+    {"name": "Battery Management", "domain": "Mechanical", "desc": "Electric vehicle lithium-ion pack BMS architecture & thermal safety", "salary": 1350000, "score": 95.0},
+    {"name": "CAN Bus", "domain": "Mechanical", "desc": "Automotive controller area network communications protocol", "salary": 950000, "score": 91.0},
+    {"name": "PLC Programming", "domain": "Electrical", "desc": "Industrial programmable logic controllers and SCADA systems", "salary": 850000, "score": 89.0},
+    {"name": "Circuit Design", "domain": "Electrical", "desc": "Analog and digital printed circuit board (PCB) design", "salary": 720000, "score": 82.0},
+    {"name": "Power Systems", "domain": "Electrical", "desc": "Grid electrical power distribution and renewable energy interconnections", "salary": 780000, "score": 80.0},
+    {"name": "Clinical Nursing", "domain": "Healthcare", "desc": "Inpatient care and emergency clinical protocols", "salary": 520000, "score": 89.0},
+    {"name": "Patient Care", "domain": "Healthcare", "desc": "Hospital patient vital monitoring and clinical diagnostics", "salary": 480000, "score": 92.0},
+    {"name": "Figma", "domain": "Design", "desc": "UI/UX interface prototyping and design system systems", "salary": 950000, "score": 87.0},
+    {"name": "SEO", "domain": "Marketing", "desc": "Search engine visibility and organic acquisition growth", "salary": 650000, "score": 80.0},
+]
+
+
+def ensure_baseline_skills(db: Session) -> dict:
+    """Ensure core skills exist in DB so job matching and trends have nodes to attach to."""
+    existing = {s.name: s for s in db.query(Skill).all()}
+    created = False
+    for sk in BASELINE_SKILLS:
+        if sk["name"] not in existing:
+            new_s = Skill(
+                name=sk["name"],
+                domain=sk["domain"],
+                description=sk["desc"],
+                demand_score=sk["score"],
+                median_salary=sk["salary"],
+                total_openings=0,
+                trend="RISING"
+            )
+            db.add(new_s)
+            created = True
+    if created:
+        db.commit()
+    return {s.name: s for s in db.query(Skill).all()}
+
+
+def get_last_sync_time(db: Session) -> Optional[datetime]:
+    """Retrieve timestamp of last successful telemetry sync."""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()
+    if setting and setting.value:
+        try:
+            return datetime.fromisoformat(setting.value)
+        except Exception:
+            return None
+    return None
+
+
+def should_auto_sync(db: Session, max_stale_hours: int = 12) -> bool:
+    """Check if telemetry data is older than max_stale_hours or has never been synced."""
+    last_sync = get_last_sync_time(db)
+    if not last_sync:
+        return True
+    return (datetime.utcnow() - last_sync) > timedelta(hours=max_stale_hours)
+
+
 def sync_all_telemetry(db: Session) -> dict:
     """Master orchestrator: runs all ingestion layers in sequence."""
-    all_skills = {s.name: s for s in db.query(Skill).all()}
+    all_skills = ensure_baseline_skills(db)
     results = {}
     results["jobs_from_remotive"] = fetch_remotive_jobs(db, all_skills)
     results["jobs_from_arbeitnow"] = fetch_arbeitnow_jobs(db, all_skills)
@@ -309,5 +375,16 @@ def sync_all_telemetry(db: Session) -> dict:
     results["skill_trends_updated"] = len(trend_data)
     results["new_districts_added"] = sync_maharashtra_districts(db)
     results["districts_synced"] = len(MH_DISTRICT_DATA)
-    results["synced_at"] = datetime.utcnow().isoformat() + "Z"
+    now_iso = datetime.utcnow().isoformat()
+    results["synced_at"] = now_iso + "Z"
+
+    # Persist last sync time in system_settings
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()
+    if setting:
+        setting.value = now_iso
+    else:
+        db.add(SystemSetting(key="last_telemetry_sync", value=now_iso))
+    db.commit()
+
     return results
+

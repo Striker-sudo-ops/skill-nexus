@@ -47,6 +47,8 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       const res = await syncLiveTelemetry();
       const d = res.data;
       setSyncResult(`${d.details?.total_new_jobs ?? 0} new jobs, ${d.details?.skill_trends_updated ?? 0} skills updated, ${d.details?.districts_synced ?? 0} districts refreshed`);
+      const overviewRes = await getAdminOverview();
+      setData(overviewRes.data);
     } catch {
       setSyncResult('Sync failed — check backend connection');
     } finally {
@@ -63,41 +65,66 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
   }
 
   const kpis = data?.kpis || {};
+  const distSummary = data?.district_summary || {
+    total_districts: 0,
+    critical_shortage_count: 0,
+    moderate_gap_count: 0,
+    low_gap_count: 0,
+  };
   
-  // Clean, realistic domain stats
-  const domainStats = [
-    { domain: 'IT & Cloud', demand: 54, supply: 38, max: 60 },
-    { domain: 'Healthcare', demand: 46, supply: 34, max: 60 },
-    { domain: 'Manufacturing', demand: 50, supply: 30, max: 60 },
-    { domain: 'Automotive EV', demand: 42, supply: 22, max: 60 },
-    { domain: 'Green Tech', demand: 36, supply: 24, max: 60 },
-  ];
+  // Dynamic domain stats from backend
+  const domainStats = (data?.domain_stats && data.domain_stats.length > 0)
+    ? data.domain_stats.map((item: any) => ({
+        domain: item.domain,
+        demand: Math.round(item.industry_demand || 0),
+        supply: Math.round(item.trained_supply || 0),
+        max: Math.max(100, Math.max(item.industry_demand || 0, item.trained_supply || 0))
+      }))
+    : [
+        { domain: 'IT', demand: 0, supply: 0, max: 100 },
+        { domain: 'Data Science', demand: 0, supply: 0, max: 100 },
+        { domain: 'Healthcare', demand: 0, supply: 0, max: 100 },
+        { domain: 'Mechanical', demand: 0, supply: 0, max: 100 },
+        { domain: 'Electrical', demand: 0, supply: 0, max: 100 },
+        { domain: 'Electronics', demand: 0, supply: 0, max: 100 },
+      ];
 
-  // Emerging High-Growth Skills
-  const emergingSkills = [
-    { rank: 1, name: 'AI & Machine Learning', growth: '+48% YoY', domain: 'Artificial Intelligence', iconBg: 'bg-emerald-500' },
-    { rank: 2, name: 'EV Powertrain & BMS Systems', growth: '+42% YoY', domain: 'Automotive EV', iconBg: 'bg-blue-600' },
-    { rank: 3, name: 'Critical Care Telemetry', growth: '+34% YoY', domain: 'Healthcare Tech', iconBg: 'bg-indigo-600' },
-    { rank: 4, name: 'Solar PV & Microgrid Engineering', growth: '+29% YoY', domain: 'Renewable Energy', iconBg: 'bg-teal-500' },
-    { rank: 5, name: 'Industrial Robotics & PLC Ladder', growth: '+25% YoY', domain: 'Mechatronics', iconBg: 'bg-purple-600' },
-  ];
+  // Emerging High-Growth Skills from backend
+  const emergingSkills = (data?.high_demand_skills && data.high_demand_skills.length > 0)
+    ? data.high_demand_skills.slice(0, 5).map((skill: any, idx: number) => ({
+        rank: idx + 1,
+        name: skill.name,
+        growth: skill.trend ? `${skill.trend} (${Math.round(skill.demand_score || 0)})` : `Score: ${Math.round(skill.demand_score || 0)}`,
+        domain: skill.domain || 'Cross-Sector',
+        iconBg: idx === 0 ? 'bg-emerald-500' : idx === 1 ? 'bg-blue-600' : idx === 2 ? 'bg-indigo-600' : 'bg-purple-600'
+      }))
+    : [];
 
-  // Outdated / Declining Skills (Out of Place)
-  const decliningSkills = [
-    { name: '2D Manual Blueprint Drafting', decline: '-68% YoY', issue: 'Outdated Curriculum', status: 'Replace with 3D Parametric/SolidWorks' },
-    { name: 'Manual Standalone Data Entry', decline: '-74% YoY', issue: 'Severe Oversupply', status: 'Eliminated by Automated Pipelines' },
-    { name: 'Scripted Cold Telecalling (BPO)', decline: '-48% YoY', issue: 'Saturated Capacity', status: 'Shift to Digital CRM / Support' },
-    { name: 'Legacy Server Room Tape Maintenance', decline: '-62% YoY', issue: 'Cloud Migration', status: 'Reallocate to AWS/DevOps' },
-  ];
+  // Outdated / Declining Skills from backend
+  const decliningSkills = (data?.declining_skills && data.declining_skills.length > 0)
+    ? data.declining_skills
+    : [];
+
+  // District severity calculations
+  const totalD = distSummary.total_districts || 1;
+  const criticalCount = distSummary.critical_shortage_count ?? 0;
+  const moderateCount = distSummary.moderate_gap_count ?? 0;
+  const lowCount = distSummary.low_gap_count ?? 0;
+  const criticalPct = distSummary.total_districts > 0 ? Math.round((criticalCount / totalD) * 100) : 0;
+  const moderatePct = distSummary.total_districts > 0 ? Math.round((moderateCount / totalD) * 100) : 0;
+  const lowPct = distSummary.total_districts > 0 ? Math.round((lowCount / totalD) * 100) : 0;
 
   // Radial chart calculations
-  const placementRate = kpis.avg_placement_rate ? Math.round(kpis.avg_placement_rate) : 67;
+  const placementRate = Math.round(kpis.avg_placement_rate ?? 0);
   const placementCircumference = 2 * Math.PI * 40;
   const placementOffset = placementCircumference - (placementRate / 100) * placementCircumference;
 
-  const capacityRate = Math.min(100, Math.round(((kpis.current_training_capacity || 12000) / (kpis.industry_target_capacity || 15000)) * 100)) || 78;
+  const currentCap = kpis.current_training_capacity ?? 0;
+  const targetCap = kpis.industry_target_capacity ?? 0;
+  const capacityRate = targetCap > 0 ? Math.min(100, Math.round((currentCap / targetCap) * 100)) : 0;
   const capacityCircumference = 2 * Math.PI * 40;
   const capacityOffset = capacityCircumference - (capacityRate / 100) * capacityCircumference;
+
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-8 font-sans">
@@ -138,7 +165,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
           <div className="mt-1 flex items-baseline justify-between">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              {(kpis.total_students || 12480).toLocaleString()}
+              {(kpis.total_students ?? 0).toLocaleString()}
             </div>
             <div className="flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
               <ArrowUpRight className="w-3 h-3" />
@@ -157,7 +184,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
           <div className="mt-1 flex items-baseline justify-between">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              {(kpis.total_courses || 84).toLocaleString()}
+              {(kpis.total_courses ?? 0).toLocaleString()}
             </div>
             <div className="flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
               <ArrowUpRight className="w-3 h-3" />
@@ -176,7 +203,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
           <div className="mt-1 flex items-baseline justify-between">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              {(kpis.total_trainers || 698).toLocaleString()}
+              {(kpis.total_trainers ?? 0).toLocaleString()}
             </div>
             <div className="flex items-center text-[10px] font-semibold text-amber-600 dark:text-amber-400">
               <Activity className="w-3 h-3" />
@@ -195,7 +222,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
           <div className="mt-1 flex items-baseline justify-between">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              {(kpis.total_enrollments || 324).toLocaleString()}
+              {(kpis.total_enrollments ?? 0).toLocaleString()}
             </div>
             <div className="flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
               <TrendingUp className="w-3 h-3" />
@@ -253,7 +280,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
                   <div className="absolute inset-x-0 top-1/3 border-b border-dashed border-gray-100 dark:border-gray-800 pointer-events-none" />
                   <div className="absolute inset-x-0 top-2/3 border-b border-dashed border-gray-100 dark:border-gray-800 pointer-events-none" />
 
-                  {domainStats.map((item, idx) => {
+                  {domainStats.map((item: any, idx: number) => {
                     const demandHeight = Math.round((item.demand / item.max) * 100);
                     const supplyHeight = Math.round((item.supply / item.max) * 100);
                     return (
@@ -298,7 +325,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
         </Card>
 
-        {/* Clean District Skill Gap Severity (Refined: No separate place names) */}
+            {/* Clean District Skill Gap Severity (Dynamic telemetry) */}
         <Card className="p-5 border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-2xl shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
@@ -313,7 +340,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               </button>
             </div>
 
-            {/* Clean, professional summary distribution without individual place tags */}
+            {/* Dynamic summary distribution based on active database */}
             <div className="py-3 space-y-2.5">
               {/* Critical Shortage Tier */}
               <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl">
@@ -322,13 +349,13 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
                     <span className="text-xs font-bold text-red-800 dark:text-red-300">Critical Shortage Districts</span>
                   </div>
-                  <span className="text-xs font-extrabold text-red-700 dark:text-red-400">4 Districts</span>
+                  <span className="text-xs font-extrabold text-red-700 dark:text-red-400">{criticalCount} Districts</span>
                 </div>
                 <div className="w-full bg-red-200 dark:bg-red-900/50 h-1.5 rounded-full mt-2 overflow-hidden">
-                  <div className="bg-red-600 h-full rounded-full" style={{ width: '68%' }} />
+                  <div className="bg-red-600 h-full rounded-full transition-all duration-500" style={{ width: `${criticalPct}%` }} />
                 </div>
                 <p className="text-[10px] text-red-600 dark:text-red-300 mt-1.5 leading-snug">
-                  Immediate training center deployment mandated for high-density automotive &amp; tooling clusters.
+                  Immediate training center deployment mandated for high-density vocational clusters.
                 </p>
               </div>
 
@@ -339,10 +366,10 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
                     <span className="text-xs font-bold text-amber-800 dark:text-amber-300">Moderate Gap Districts</span>
                   </div>
-                  <span className="text-xs font-extrabold text-amber-700 dark:text-amber-400">6 Districts</span>
+                  <span className="text-xs font-extrabold text-amber-700 dark:text-amber-400">{moderateCount} Districts</span>
                 </div>
                 <div className="w-full bg-amber-200 dark:bg-amber-900/50 h-1.5 rounded-full mt-2 overflow-hidden">
-                  <div className="bg-amber-500 h-full rounded-full" style={{ width: '45%' }} />
+                  <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${moderatePct}%` }} />
                 </div>
                 <p className="text-[10px] text-amber-600 dark:text-amber-300 mt-1.5 leading-snug">
                   Trainer upskilling and modern lab equipment required to match new technology standards.
@@ -356,10 +383,10 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
                     <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Balanced / Low Gap</span>
                   </div>
-                  <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400">2 Districts</span>
+                  <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400">{lowCount} Districts</span>
                 </div>
                 <div className="w-full bg-emerald-200 dark:bg-emerald-900/50 h-1.5 rounded-full mt-2 overflow-hidden">
-                  <div className="bg-emerald-600 h-full rounded-full" style={{ width: '22%' }} />
+                  <div className="bg-emerald-600 h-full rounded-full transition-all duration-500" style={{ width: `${lowPct}%` }} />
                 </div>
                 <p className="text-[10px] text-emerald-600 dark:text-emerald-300 mt-1.5 leading-snug">
                   Supply matches employer absorption. Reallocation of additional seats recommended.
@@ -398,25 +425,31 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
 
           <div className="pt-3 space-y-2">
-            {emergingSkills.map((skill) => (
-              <div
-                key={skill.rank}
-                className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/60"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shadow-xs shrink-0 ${skill.iconBg}`}>
-                    {skill.rank}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-gray-900 dark:text-white">{skill.name}</div>
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{skill.domain}</div>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-md">
-                  {skill.growth}
-                </span>
+            {emergingSkills.length === 0 ? (
+              <div className="text-center py-6 text-xs text-gray-400">
+                No active skills in database. Click &quot;Sync Live Data&quot; to fetch real telemetry.
               </div>
-            ))}
+            ) : (
+              emergingSkills.map((skill: any) => (
+                <div
+                  key={skill.rank}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/60"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shadow-xs shrink-0 ${skill.iconBg}`}>
+                      {skill.rank}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-gray-900 dark:text-white">{skill.name}</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400">{skill.domain}</div>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-md">
+                    {skill.growth}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </Card>
 
@@ -438,27 +471,33 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
 
           <div className="pt-3 space-y-2">
-            {decliningSkills.map((skill, idx) => (
-              <div
-                key={idx}
-                className="p-2.5 rounded-xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-900 dark:text-white truncate">{skill.name}</span>
-                    <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-800 shrink-0">
-                      {skill.issue}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                    Recommendation: {skill.status}
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-100/70 dark:bg-rose-950/50 px-2 py-0.5 rounded-md shrink-0">
-                  {skill.decline}
-                </span>
+            {decliningSkills.length === 0 ? (
+              <div className="text-center py-6 text-xs text-gray-400">
+                No outdated or declining skills identified.
               </div>
-            ))}
+            ) : (
+              decliningSkills.map((skill: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="p-2.5 rounded-xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900 dark:text-white truncate">{skill.name}</span>
+                      <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.2 rounded border border-rose-200 dark:border-rose-800 shrink-0">
+                        {skill.issue}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                      Recommendation: {skill.status}
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-100/70 dark:bg-rose-950/50 px-2 py-0.5 rounded-md shrink-0">
+                    {skill.decline}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>
@@ -495,13 +534,13 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-xl">
                 <div className="text-[9px] text-gray-400 uppercase font-semibold">Enrolled</div>
                 <div className="text-xs font-bold text-gray-900 dark:text-white mt-0.5">
-                  {(kpis.current_training_capacity || 12000).toLocaleString()}
+                  {(kpis.current_training_capacity ?? 0).toLocaleString()}
                 </div>
               </div>
               <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-xl">
                 <div className="text-[9px] text-gray-400 uppercase font-semibold">Target</div>
                 <div className="text-xs font-bold text-gray-900 dark:text-white mt-0.5">
-                  {(kpis.industry_target_capacity || 15000).toLocaleString()}
+                  {(kpis.industry_target_capacity ?? 0).toLocaleString()}
                 </div>
               </div>
             </div>
@@ -538,7 +577,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-100 dark:border-emerald-800">
                 <div className="text-[9px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold">Employer Sat.</div>
                 <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
-                  {kpis.employer_satisfaction_rate || 85}%
+                  {Math.round(kpis.employer_satisfaction_rate ?? 0)}%
                 </div>
               </div>
               <div className="p-2 bg-rose-50 dark:bg-rose-900/20 rounded-xl border border-rose-100 dark:border-rose-800">

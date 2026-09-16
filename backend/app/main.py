@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.db.session import engine, Base
+import asyncio
+from app.db.session import engine, Base, SessionLocal
 from app.db.seed_data import seed
 from app.models import entities
 from app.api.v1 import auth, students, employers, skills, jobs, quiz, admin, courses, trainer
@@ -17,9 +18,34 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+async def telemetry_scheduler_loop():
+    """
+    Background worker loop:
+    1. Runs 6 seconds after server startup.
+    2. Auto-syncs if data has never been synced or is >12 hours stale.
+    3. Repeats check every 1 hour while server is awake.
+    """
+    await asyncio.sleep(6)
+    while True:
+        try:
+            db = SessionLocal()
+            from app.services.ingestion_service import should_auto_sync, sync_all_telemetry
+            if should_auto_sync(db, max_stale_hours=12):
+                print("[Auto-Sync] Telemetry is uninitialized or >12h stale. Running automatic sync...")
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, sync_all_telemetry, db)
+                print("[Auto-Sync] Telemetry synchronization completed successfully.")
+            db.close()
+        except Exception as e:
+            print(f"[Auto-Sync Error] Background scheduler error: {e}")
+
+        await asyncio.sleep(3600)
+
 @app.on_event('startup')
-def startup():
+async def startup():
     seed()
+    asyncio.create_task(telemetry_scheduler_loop())
+
 
 @app.get('/health')
 def health():

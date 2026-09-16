@@ -275,3 +275,11 @@ class TrainingInstitute(Base):
     placement_rate = Column(Float)
     rating = Column(Float)
     contact_email = Column(String)
+
+class SystemSetting(Base):
+    __tablename__ = 'system_settings'
+    id = Column(Integer, primary_key=True)
+    key = Column(String, unique=True, index=True)
+    value = Column(String)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

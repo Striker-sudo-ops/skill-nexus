@@ -62,6 +62,18 @@ def get_admin_overview(db: Session = Depends(get_db)):
             "trained_supply": supply_pct
         })
 
+    districts = db.query(DistrictIntelligence).all()
+    total_districts = len(districts)
+    critical_count = len([d for d in districts if d.status == 'CRITICAL_SHORTAGE'])
+    moderate_count = len([d for d in districts if d.status in ['MODERATE', 'HIGH_DEMAND']])
+    low_count = len([d for d in districts if d.status in ['BALANCED', 'OVERSUPPLY']])
+    
+    declining_skills_db = db.query(Skill).filter(Skill.trend == 'DECLINING').limit(6).all()
+    declining_skills_list = [
+        {"name": s.name, "decline": "-45% YoY", "issue": "Curriculum Sunset", "status": f"Reallocate capacity from {s.name}"}
+        for s in declining_skills_db
+    ]
+
     return {
         "kpis": {
             "avg_placement_rate": round(float(avg_placement), 1),
@@ -84,7 +96,14 @@ def get_admin_overview(db: Session = Depends(get_db)):
         ],
         "growing_roles": growing_roles,
         "declining_roles": declining_roles,
+        "declining_skills": declining_skills_list,
         "domain_stats": domain_stats,
+        "district_summary": {
+            "total_districts": total_districts,
+            "critical_shortage_count": critical_count,
+            "moderate_gap_count": moderate_count,
+            "low_gap_count": low_count,
+        }
     }
 
 # ─── Districts ────────────────────────────────────────────────────────────────
