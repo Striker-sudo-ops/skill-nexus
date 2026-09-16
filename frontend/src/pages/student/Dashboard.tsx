@@ -1,0 +1,185 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { getStudentProfile, getRecommendedJobs, getTrendingSkills } from '../../services/api';
+import { Card, Badge, Button, Spinner } from '../../components/ui';
+import { MapPin, Briefcase, TrendingUp, IndianRupee, BookOpen, FileText, ArrowUpRight, Sparkles } from 'lucide-react';
+
+export default function Dashboard({ navigate }: { navigate: (p: string, params?: any) => void }) {
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<any>(null);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      getStudentProfile().catch(() => ({ data: {} })),
+      getRecommendedJobs().catch(() => ({ data: [] })),
+      getTrendingSkills({ limit: 6 }).catch(() => ({ data: [] }))
+    ]).then(([profRes, jobsRes]) => {
+      setProfile(profRes.data);
+      setJobs(jobsRes.data || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <div className="flex justify-center py-20"><Spinner className="w-8 h-8" /></div>;
+  }
+
+  const stuData = profile?.profile || profile || {};
+  const completion = [
+    stuData.full_name,
+    stuData.phone,
+    profile?.education?.length,
+    profile?.skills?.length,
+    profile?.completed_courses?.length
+  ].filter(Boolean).length * 20;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-8">
+      {/* Welcome Hero Card */}
+      <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xs border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
+            Hello, {user?.full_name || 'Student'}!
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500">
+            Welcome to your Skill Nexus technical career & skill intelligence dashboard.
+          </p>
+        </div>
+        <div className="w-full sm:w-56 text-left sm:text-right bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+          <div className="flex justify-between text-xs font-semibold mb-1">
+            <span className="text-gray-600">Profile Strength:</span>
+            <span className="text-blue-700 font-bold">{completion}%</span>
+          </div>
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-600 transition-all rounded-full" style={{ width: `${completion}%` }} />
+          </div>
+          <div className="text-[11px] text-gray-400 mt-1">
+            {completion < 100 ? 'Complete profile for best job matches' : 'Profile fully optimized!'}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Action Navigation Buttons */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'My Profile', desc: 'Personal, education & skills', icon: <Briefcase className="w-5 h-5"/>, action: () => navigate('student/profile') },
+          { label: 'Govt Courses', desc: 'AI aligned technical curricula', icon: <BookOpen className="w-5 h-5"/>, action: () => navigate('student/courses') },
+          { label: 'Browse Jobs', desc: 'Verified industry openings', icon: <MapPin className="w-5 h-5"/>, action: () => navigate('student/jobs') },
+          { label: 'Resume Builder', desc: 'IEEE LaTeX standard format', icon: <FileText className="w-5 h-5"/>, action: () => navigate('student/resume') },
+        ].map((btn, i) => (
+          <button 
+            key={i} 
+            onClick={btn.action} 
+            className="bg-white p-4 rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all flex flex-col items-start text-left group cursor-pointer"
+          >
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors mb-2">
+              {btn.icon}
+            </div>
+            <span className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{btn.label}</span>
+            <span className="text-[11px] text-gray-400 mt-0.5">{btn.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Recommended Jobs Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Recommended jobs to you</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Matched based on your verified skills, education, and completed coursework</p>
+          </div>
+          <Button variant="ghost" onClick={() => navigate('student/recommended-jobs')} className="text-xs font-semibold">
+            View Suggested Jobs &rarr;
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {jobs.map((item: any) => {
+            const j = item.job || item;
+            const title = j.title || 'Technical Specialist';
+            const company = j.company_name || 'Industry Partner';
+            const city = j.city || 'India';
+            const state = j.state || '';
+            const matchPct = item.skill_match_pct ?? j.skill_match_pct;
+            const salaryMin = j.salary_min;
+            const salaryMax = j.salary_max;
+            const jobType = j.job_type || 'FULL_TIME';
+            const jobId = j.id || item.id;
+
+            return (
+              <Card key={jobId} className="p-5 border border-gray-200 hover:border-blue-300 transition-all flex flex-col justify-between space-y-3">
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-base text-gray-900 leading-snug line-clamp-1">{title}</h3>
+                      <p className="text-xs font-medium text-gray-600 mt-0.5">{company}</p>
+                    </div>
+                    {matchPct !== undefined && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                        matchPct >= 70 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        matchPct >= 40 ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {Math.round(matchPct)}% Match
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 pt-1">
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                      {city}{state ? `, ${state}` : ''}
+                    </span>
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-[10px] font-medium">
+                      {jobType}
+                    </span>
+                  </div>
+
+                  {salaryMin && (
+                    <div className="text-xs font-semibold text-emerald-800 bg-emerald-50/70 px-2 py-1 rounded">
+                      ₹{(salaryMin / 100000).toFixed(1)} - {(salaryMax / 100000).toFixed(1)} LPA
+                    </div>
+                  )}
+
+                  {/* Required skills chips */}
+                  {item.required_skills?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {item.required_skills.slice(0, 3).map((sk: any, sIdx: number) => (
+                        <span key={sIdx} className="text-[10px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-medium">
+                          {sk.name || sk}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => navigate('student/job-detail', { jobId })}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <span>View Details & Apply</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </Card>
+            );
+          })}
+
+          {jobs.length === 0 && (
+            <div className="col-span-3 text-center py-12 bg-white border border-gray-200 rounded-2xl p-6 space-y-2">
+              <Sparkles className="w-8 h-8 text-blue-600 mx-auto" />
+              <div className="font-bold text-sm text-gray-900">No matching jobs found yet</div>
+              <p className="text-xs text-gray-500 max-w-md mx-auto">
+                Update your verified skills or complete government courses in your profile to trigger AI job recommendations!
+              </p>
+              <Button onClick={() => navigate('student/profile')} className="mt-2 text-xs">
+                Update Profile & Skills
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
