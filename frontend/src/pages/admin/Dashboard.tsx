@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
-import { getAdminOverview, exportReport } from '../../services/api';
+import { getAdminOverview, exportReport, syncLiveTelemetry } from '../../services/api';
 import { Card, Spinner } from '../../components/ui';
 import { 
   Users, BookOpen, School, Building2, TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle2,
   Download, ShieldCheck, MapPin, ChevronRight, Activity, Award,
-  Sparkles, Layers
+  Sparkles, Layers, RefreshCw
 } from 'lucide-react';
 
 export default function AdminDashboard({ navigate }: { navigate: (page: string) => void }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
     getAdminOverview()
@@ -35,6 +37,20 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       alert('Failed to export report');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await syncLiveTelemetry();
+      const d = res.data;
+      setSyncResult(`${d.details?.total_new_jobs ?? 0} new jobs, ${d.details?.skill_trends_updated ?? 0} skills updated, ${d.details?.districts_synced ?? 0} districts refreshed`);
+    } catch {
+      setSyncResult('Sync failed — check backend connection');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -562,6 +578,21 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               ))}
             </div>
           </div>
+
+          {/* Sync Live Data Button */}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="w-full py-2 px-3 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Fetching Real-World Data...' : 'Sync Live Data'}
+          </button>
+          {syncResult && (
+            <p className="text-[10px] text-center text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+              {syncResult}
+            </p>
+          )}
 
           <button
             onClick={handleExport}

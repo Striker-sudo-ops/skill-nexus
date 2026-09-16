@@ -103,6 +103,7 @@ export const updateEnrollmentStatus = (id: number, status: string) => api.put(`/
 export const getCurriculumUpdates = () => api.get('/admin/curriculum-updates');
 export const actionCurriculumUpdate = (id: number, action: string) => api.post(`/admin/curriculum-updates/${id}/action`, { action });
 export const exportReport = () => api.get('/admin/export-report', { responseType: 'blob' });
+export const syncLiveTelemetry = () => api.post('/admin/sync-live-data');
 
 // ── Trainer ──────────────────────────────────────────────────────────────────
 export const getTrainerProfile = () => api.get('/trainer/profile');

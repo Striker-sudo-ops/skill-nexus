@@ -327,3 +327,20 @@ def export_government_report(db: Session = Depends(get_db)):
         content=output.getvalue(), media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=skillnexus_government_report.csv"}
     )
+
+# ─── Live Data Sync ───────────────────────────────────────────────────────────
+@router.post('/sync-live-data')
+def sync_live_data(db: Session = Depends(get_db)):
+    """
+    Triggers the real-world data ingestion pipeline:
+    - Fetches live job postings from Remotive + Arbeitnow (Maharashtra-tagged)
+    - Updates skill demand trends via GitHub Search API
+    - Syncs Maharashtra district intelligence from MSDE/data.gov.in baseline
+    """
+    from app.services.ingestion_service import sync_all_telemetry
+    results = sync_all_telemetry(db)
+    return {
+        "success": True,
+        "message": f"Sync complete. {results.get('total_new_jobs', 0)} new jobs ingested, {results.get('skill_trends_updated', 0)} skill trends updated, {results.get('districts_synced', 0)} Maharashtra districts refreshed.",
+        "details": results
+    }
