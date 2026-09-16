@@ -357,10 +357,10 @@ def get_last_sync_time(db: Session) -> Optional[datetime]:
 
 
 def should_auto_sync(db: Session, max_stale_hours: int = 12) -> bool:
-    """Check if telemetry data is older than max_stale_hours or has never been synced."""
+    """Check if telemetry data has been initialized and is older than max_stale_hours."""
     last_sync = get_last_sync_time(db)
     if not last_sync:
-        return True
+        return False
     return (datetime.utcnow() - last_sync) > timedelta(hours=max_stale_hours)
 
 
