@@ -49,8 +49,10 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       setSyncResult(`${d.details?.total_new_jobs ?? 0} new jobs, ${d.details?.skill_trends_updated ?? 0} skills updated, ${d.details?.districts_synced ?? 0} districts refreshed`);
       const overviewRes = await getAdminOverview();
       setData(overviewRes.data);
-    } catch {
-      setSyncResult('Sync failed — check backend connection');
+    } catch (err: any) {
+      console.error('Live sync error:', err);
+      const errDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Check backend connection';
+      setSyncResult(`Sync error: ${errDetail}`);
     } finally {
       setSyncing(false);
     }

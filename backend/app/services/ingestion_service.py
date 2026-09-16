@@ -226,24 +226,21 @@ def fetch_github_skill_trends(db: Session) -> dict:
         "React": "react",
         "Docker": "docker",
         "AWS": "aws",
-        "Java": "java",
         "Machine Learning": "machine-learning",
         "SQL": "sql",
-        "Data Visualization": "data-visualization",
-        "PLC Programming": "plc",
-        "Battery Management": "bms",
-        "AutoCAD": "autocad",
-        "Figma": "figma",
     }
     since_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
     results = {}
-    try:
-        for skill_name, topic in SKILL_TOPICS.items():
+    for skill_name, topic in SKILL_TOPICS.items():
+        try:
             r = requests.get(
                 "https://api.github.com/search/repositories",
                 params={"q": f"topic:{topic} created:>{since_date}", "sort": "updated", "per_page": 1},
-                headers={"Accept": "application/vnd.github+json"},
-                timeout=10
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "SkillNexus-Telemetry/1.0"
+                },
+                timeout=3
             )
             if r.status_code == 200:
                 total = r.json().get("total_count", 0)
@@ -260,6 +257,9 @@ def fetch_github_skill_trends(db: Session) -> dict:
                         skill.demand_score = max((skill.demand_score or 50.0) - 2.0, 10.0)
                     else:
                         skill.trend = "STABLE"
+        except Exception:
+            continue
+    try:
         db.commit()
     except Exception:
         pass
