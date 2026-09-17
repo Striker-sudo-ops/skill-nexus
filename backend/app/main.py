@@ -29,6 +29,14 @@ def ensure_schema_compatibility():
                     conn.execute(text('ALTER TABLE jobs ADD COLUMN company_name VARCHAR'))
                 if 'apply_url' not in cols:
                     conn.execute(text('ALTER TABLE jobs ADD COLUMN apply_url VARCHAR'))
+                if 'source' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN source VARCHAR'))
+                if 'source_job_id' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN source_job_id VARCHAR'))
+                if 'fetched_at' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN fetched_at DATETIME'))
+                if 'last_seen_at' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN last_seen_at DATETIME'))
                 conn.commit()
     except Exception as e:
         print(f'[Schema] Migration notice: {e}')

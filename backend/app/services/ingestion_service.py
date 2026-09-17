@@ -367,18 +367,25 @@ def sync_maharashtra_industry_jobs(db: Session, db_skills: dict) -> int:
     """Seeds verified Maharashtra technical and engineering jobs from major regional employers."""
     count = 0
     employer_id = _get_or_create_ingestion_employer(db)
-    for job_data in MAHARASHTRA_INDUSTRY_ROLES:
+    now = datetime.utcnow()
+    for idx, job_data in enumerate(MAHARASHTRA_INDUSTRY_ROLES):
+        source_id = f"mh-ind-{idx + 1}"
         existing = db.query(Job).filter(
-            Job.title == job_data["title"],
-            Job.company_name == job_data["company_name"]
+            ((Job.source == "maharashtra_industry") & (Job.source_job_id == source_id)) |
+            ((Job.title == job_data["title"]) & (Job.company_name == job_data["company_name"]))
         ).first()
         if existing:
-            # Update fields in case they were updated
-            existing.description = job_data["description"]
+            # Update fields and refresh freshness
+            existing.description = _clean_html_description(job_data["description"])
             existing.apply_url = job_data["apply_url"]
             existing.salary_min = job_data["salary_min"]
             existing.salary_max = job_data["salary_max"]
             existing.openings_count = job_data["openings_count"]
+            existing.source = "maharashtra_industry"
+            existing.source_job_id = source_id
+            existing.last_seen_at = now
+            existing.is_active = True
+            db.commit()
             continue
 
         city_matches = [c for c in MH_CITIES if c["city"].lower() == job_data["city"].lower()]
@@ -388,6 +395,10 @@ def sync_maharashtra_industry_jobs(db: Session, db_skills: dict) -> int:
             employer_id=employer_id,
             company_name=job_data["company_name"],
             apply_url=job_data["apply_url"],
+            source="maharashtra_industry",
+            source_job_id=source_id,
+            fetched_at=now,
+            last_seen_at=now,
             title=job_data["title"],
             description=_clean_html_description(job_data["description"]),
             sector=job_data["sector"],
@@ -431,6 +442,7 @@ def fetch_remotive_jobs(db: Session, db_skills: dict) -> int:
         jobs = r.json().get("jobs", [])
         employer_id = _get_or_create_ingestion_employer(db)
         
+        now = datetime.utcnow()
         # Filter strictly for India, APAC, Worldwide, or Anywhere
         for i, j in enumerate(jobs):
             location_req = (j.get("candidate_required_location") or "").lower()
@@ -447,11 +459,19 @@ def fetch_remotive_jobs(db: Session, db_skills: dict) -> int:
             if not matched_skills:
                 continue
 
+            raw_id = str(j.get("id") or "")
+            source_id = f"remotive-{raw_id}" if raw_id else f"remotive-{company[:30]}-{title[:30]}"
+
             existing = db.query(Job).filter(
-                Job.title == title[:200],
-                Job.company_name == company[:200]
+                ((Job.source == "remotive") & (Job.source_job_id == source_id)) |
+                ((Job.title == title[:200]) & (Job.company_name == company[:200]))
             ).first()
             if existing:
+                existing.source = "remotive"
+                existing.source_job_id = source_id
+                existing.last_seen_at = now
+                existing.is_active = True
+                db.commit()
                 continue
 
             city_info = _city_cycle(i)
@@ -459,6 +479,10 @@ def fetch_remotive_jobs(db: Session, db_skills: dict) -> int:
                 employer_id=employer_id,
                 company_name=company[:200] if company else "Global Tech Employer",
                 apply_url=j.get("url"),
+                source="remotive",
+                source_job_id=source_id,
+                fetched_at=now,
+                last_seen_at=now,
                 title=title[:200],
                 description=desc,
                 sector="IT",
@@ -501,6 +525,7 @@ def fetch_jobicy_jobs(db: Session, db_skills: dict) -> int:
             return 0
         jobs = r.json().get("jobs", [])
         employer_id = _get_or_create_ingestion_employer(db)
+        now = datetime.utcnow()
 
         for i, j in enumerate(jobs):
             geo = (j.get("jobGeo") or "").lower()
@@ -515,11 +540,19 @@ def fetch_jobicy_jobs(db: Session, db_skills: dict) -> int:
             if not matched_skills:
                 continue
 
+            raw_id = str(j.get("id") or "")
+            source_id = f"jobicy-{raw_id}" if raw_id else f"jobicy-{company[:30]}-{title[:30]}"
+
             existing = db.query(Job).filter(
-                Job.title == title[:200],
-                Job.company_name == company[:200]
+                ((Job.source == "jobicy") & (Job.source_job_id == source_id)) |
+                ((Job.title == title[:200]) & (Job.company_name == company[:200]))
             ).first()
             if existing:
+                existing.source = "jobicy"
+                existing.source_job_id = source_id
+                existing.last_seen_at = now
+                existing.is_active = True
+                db.commit()
                 continue
 
             city_info = _city_cycle(i + 3)
@@ -527,6 +560,10 @@ def fetch_jobicy_jobs(db: Session, db_skills: dict) -> int:
                 employer_id=employer_id,
                 company_name=company[:200] if company else "Global Tech Employer",
                 apply_url=j.get("url"),
+                source="jobicy",
+                source_job_id=source_id,
+                fetched_at=now,
+                last_seen_at=now,
                 title=title[:200],
                 description=desc,
                 sector="IT",
@@ -730,6 +767,13 @@ def sync_all_telemetry(db: Session) -> dict:
     
     now_iso = datetime.utcnow().isoformat()
     results["synced_at"] = now_iso + "Z"
+
+    # 6. Deactivate stale jobs not seen in 30 days
+    try:
+        stale_cutoff = datetime.utcnow() - timedelta(days=30)
+        db.query(Job).filter(Job.last_seen_at != None, Job.last_seen_at < stale_cutoff, Job.is_active == True).update({"is_active": False}, synchronize_session=False)
+    except Exception as e:
+        print(f"[Telemetry] Stale cleanup note: {e}")
 
     # Persist last sync time in system_settings
     setting = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()

@@ -398,3 +398,23 @@ def wipe_telemetry_data(db: Session = Depends(get_db)):
         "message": "All telemetry, jobs, skills, and districts have been cleanly wiped. User accounts remain active."
     }
 
+
+# ─── Data Freshness ───────────────────────────────────────────────────────────
+@router.get('/last-sync')
+def get_last_sync(db: Session = Depends(get_db)):
+    """Returns when the data was last synced and how many hours ago that was."""
+    from app.models.entities import SystemSetting
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()
+    if not setting or not setting.value:
+        return {"last_sync": None, "hours_ago": None, "never_synced": True}
+    from datetime import datetime
+    try:
+        last_sync_dt = datetime.fromisoformat(setting.value)
+        hours_ago = round((datetime.utcnow() - last_sync_dt).total_seconds() / 3600, 1)
+        return {
+            "last_sync": setting.value + "Z",
+            "hours_ago": hours_ago,
+            "never_synced": False
+        }
+    except Exception:
+        return {"last_sync": None, "hours_ago": None, "never_synced": True}

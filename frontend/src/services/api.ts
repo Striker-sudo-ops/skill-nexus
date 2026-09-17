@@ -107,6 +107,7 @@ export const actionCurriculumUpdate = (id: number, action: string) => api.post(`
 export const exportReport = () => api.get('/admin/export-report', { responseType: 'blob' });
 export const syncLiveTelemetry = () => api.post('/admin/sync-live-data');
 export const wipeTelemetry = () => api.post('/admin/wipe-telemetry');
+export const getLastSync = () => api.get('/admin/last-sync');
 
 // ── Trainer ──────────────────────────────────────────────────────────────────
 export const getTrainerProfile = () => api.get('/trainer/profile');

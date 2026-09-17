@@ -12,41 +12,56 @@ router = APIRouter()
 def search_jobs(
     q: Optional[str] = None, skill_ids: Optional[str] = None, domain: Optional[str] = None,
     city: Optional[str] = None, state: Optional[str] = None, job_type: Optional[str] = None,
+    sector: Optional[str] = None,
+    experience_min: Optional[int] = None, experience_max: Optional[int] = None,
+    salary_min: Optional[int] = None, salary_max: Optional[int] = None,
     lat: Optional[float] = None, lng: Optional[float] = None,
     page: int = 1, per_page: int = 20, db: Session = Depends(get_db)
 ):
     query = db.query(Job).filter(Job.is_active == True)
-    
+
     if q:
-        query = query.filter((Job.title.ilike(f'%{q}%')) | (Job.description.ilike(f'%{q}%')))
+        query = query.filter((Job.title.ilike(f'%{q}%')) | (Job.description.ilike(f'%{q}%')) | (Job.company_name.ilike(f'%{q}%')))
     if city:
-        query = query.filter(Job.city == city)
+        query = query.filter(Job.city.ilike(f'%{city}%'))
+    if state:
+        query = query.filter(Job.state.ilike(f'%{state}%'))
     if job_type:
         query = query.filter(Job.job_type == job_type)
-        
+    if sector:
+        query = query.filter(Job.sector.ilike(f'%{sector}%'))
+    if experience_min is not None:
+        query = query.filter(Job.experience_years >= experience_min)
+    if experience_max is not None:
+        query = query.filter(Job.experience_years <= experience_max)
+    if salary_min is not None:
+        query = query.filter(Job.salary_min >= salary_min)
+    if salary_max is not None:
+        query = query.filter(Job.salary_max <= salary_max)
+
     jobs_all = query.all()
     results = []
-    
+
     target_skills = [int(s) for s in skill_ids.split(',')] if skill_ids else []
-    
+
     for j in jobs_all:
         req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
         if target_skills:
             rs_ids = [rs.skill_id for rs in req_skills]
             if not any(ts in rs_ids for ts in target_skills):
                 continue
-                
+
         dist = None
         if lat and lng and j.latitude and j.longitude:
             dist = haversine(lat, lng, j.latitude, j.longitude)
-            
+
         emp = db.query(Employer).filter(Employer.id == j.employer_id).first()
         skill_objs = []
         for rs in req_skills:
             sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
             if sk:
                 skill_objs.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
-                
+
         results.append({
             "id": j.id,
             "title": j.title,
@@ -62,16 +77,18 @@ def search_jobs(
             "salary_max": j.salary_max or 950000,
             "openings_count": j.openings_count or 1,
             "sector": j.sector,
+            "source": j.source,
+            "last_seen_at": j.last_seen_at.isoformat() if j.last_seen_at else None,
             "required_skills": skill_objs,
             "distance": dist,
             "job": j
         })
-        
+
     if lat and lng:
         results.sort(key=lambda x: x["distance"] if x["distance"] is not None else float('inf'))
     else:
         results.sort(key=lambda x: x["id"], reverse=True)
-        
+
     start = (page - 1) * per_page
     return results[start:start+per_page]
 

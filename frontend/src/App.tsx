@@ -235,7 +235,7 @@ const AppContent = () => {
           {currentPage === 'student/skills' && <TrendingSkills onNavigate={navigate} />}
           {currentPage === 'student/skill-detail' && <SkillDetail skillId={currentParams.skillId} onNavigate={navigate} />}
           {currentPage === 'student/quiz' && <Quiz skillId={currentParams.skillId} onNavigate={navigate} />}
-          {currentPage === 'student/jobs' && <JobDiscovery onNavigate={navigate} />}
+          {currentPage === 'student/jobs' && <JobDiscovery onNavigate={navigate} currentParams={currentParams} />}
           {currentPage === 'student/recommended-jobs' && <RecommendedJobs onNavigate={navigate} />}
           {currentPage === 'student/job-detail' && <JobDetail jobId={currentParams.jobId} onNavigate={navigate} />}
           

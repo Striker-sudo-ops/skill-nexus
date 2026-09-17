@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getAdminOverview, exportReport, syncLiveTelemetry, wipeTelemetry } from '../../services/api';
+import { getAdminOverview, exportReport, syncLiveTelemetry, wipeTelemetry, getLastSync } from '../../services/api';
 import { Card, Spinner } from '../../components/ui';
 import { 
   Users, BookOpen, School, Building2, TrendingUp, TrendingDown,
@@ -15,12 +15,16 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
   const [syncing, setSyncing] = useState(false);
   const [wiping, setWiping] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [lastSyncInfo, setLastSyncInfo] = useState<any>(null);
 
   useEffect(() => {
     getAdminOverview()
       .then(res => setData(res.data))
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
+    getLastSync()
+      .then(res => setLastSyncInfo(res.data))
+      .catch(() => {});
   }, []);
 
   const handleExport = async () => {
@@ -50,6 +54,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       setSyncResult(`${d.details?.total_new_jobs ?? 0} new jobs, ${d.details?.skill_trends_updated ?? 0} skills updated, ${d.details?.districts_synced ?? 0} districts refreshed`);
       const overviewRes = await getAdminOverview();
       setData(overviewRes.data);
+      getLastSync().then(r => setLastSyncInfo(r.data)).catch(() => {});
     } catch (err: any) {
       console.error('Live sync error:', err);
       const errDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Check backend connection';
@@ -70,6 +75,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       setSyncResult('Database cleanly wiped. All telemetry reset to 0.');
       const overviewRes = await getAdminOverview();
       setData(overviewRes.data);
+      getLastSync().then(r => setLastSyncInfo(r.data)).catch(() => {});
     } catch (err: any) {
       console.error('Wipe error:', err);
       const errDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Check backend connection';
@@ -155,25 +161,63 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-6 sm:p-7 shadow-lg border border-blue-600/30">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Welcome, Admin
-            </h1>
-            <p className="text-blue-100/80 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+            <div className="flex items-center gap-2 mb-1.5">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+                Welcome, Admin
+              </h1>
+              {lastSyncInfo && !lastSyncInfo.never_synced && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Synced {lastSyncInfo.hours_ago === 0 ? 'just now' : `${lastSyncInfo.hours_ago}h ago`}
+                </span>
+              )}
+              {lastSyncInfo?.never_synced && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/20 text-amber-200 border border-amber-400/30">
+                  Data Uninitialized
+                </span>
+              )}
+            </div>
+            <p className="text-blue-100/80 text-xs sm:text-sm max-w-2xl leading-relaxed">
               Real-time actionable insights to bridge regional skill gaps, align vocational capacity with industry hiring demand, and govern nationwide training outcomes.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              onClick={handleSync}
+              disabled={syncing || wiping}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-500/25 hover:bg-blue-500/40 text-white border border-white/20 text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-md disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync Live Data'}
+            </button>
+
+            <button
+              onClick={handleWipe}
+              disabled={syncing || wiping}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-red-600/30 hover:bg-red-600/50 text-red-100 border border-red-400/30 text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-md disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {wiping ? 'Wiping...' : 'Wipe Data'}
+            </button>
+
             <button
               onClick={handleExport}
               disabled={downloading}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-blue-900 hover:bg-blue-50 text-xs font-bold transition-all shadow-md cursor-pointer hover:shadow-lg"
             >
               <Download className="w-4 h-4 text-blue-600" />
-              {downloading ? 'Exporting...' : 'Export Intelligence Report'}
+              {downloading ? 'Exporting...' : 'Export Report'}
             </button>
           </div>
         </div>
+
+        {syncResult && (
+          <div className="mt-4 p-3 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 text-xs text-white flex items-center justify-between">
+            <span className="font-medium">{syncResult}</span>
+            <button onClick={() => setSyncResult(null)} className="text-white/70 hover:text-white ml-2 font-bold cursor-pointer">&times;</button>
+          </div>
+        )}
       </div>
 
       {/* ── 2. Compact High-Density Top 4 Metric KPI Cards ── */}

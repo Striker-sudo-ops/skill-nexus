@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { getStudentProfile, getRecommendedJobs, getTrendingSkills } from '../../services/api';
+import { getStudentProfile, getRecommendedJobs, getTrendingSkills, getLastSync } from '../../services/api';
 import { Card, Badge, Button, Spinner } from '../../components/ui';
 import { MapPin, Briefcase, TrendingUp, IndianRupee, BookOpen, FileText, ArrowUpRight, Sparkles } from 'lucide-react';
 
@@ -9,15 +9,18 @@ export default function Dashboard({ navigate }: { navigate: (p: string, params?:
   const [profile, setProfile] = useState<any>(null);
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastSyncInfo, setLastSyncInfo] = useState<any>(null);
 
   useEffect(() => {
     Promise.all([
       getStudentProfile().catch(() => ({ data: {} })),
       getRecommendedJobs().catch(() => ({ data: [] })),
-      getTrendingSkills({ limit: 6 }).catch(() => ({ data: [] }))
-    ]).then(([profRes, jobsRes]) => {
+      getTrendingSkills({ limit: 6 }).catch(() => ({ data: [] })),
+      getLastSync().catch(() => ({ data: null }))
+    ]).then(([profRes, jobsRes, _trendRes, syncRes]) => {
       setProfile(profRes.data);
       setJobs(jobsRes.data || []);
+      setLastSyncInfo(syncRes?.data || null);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -104,7 +107,15 @@ export default function Dashboard({ navigate }: { navigate: (p: string, params?:
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Recommended jobs to you</h2>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl font-bold text-gray-900">Recommended jobs to you</h2>
+              {lastSyncInfo && !lastSyncInfo.never_synced && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Synced {lastSyncInfo.hours_ago === 0 ? 'just now' : `${lastSyncInfo.hours_ago}h ago`}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-500 mt-0.5">Matched based on your verified skills, education, and completed coursework</p>
           </div>
           <Button variant="ghost" onClick={() => navigate('student/recommended-jobs')} className="text-xs font-semibold">

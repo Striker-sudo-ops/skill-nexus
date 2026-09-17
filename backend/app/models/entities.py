@@ -139,6 +139,11 @@ class Job(Base):
     employer_id = Column(Integer, ForeignKey('employers.id'))
     company_name = Column(String, nullable=True)
     apply_url = Column(String, nullable=True)
+    # Source tracking for deduplication and freshness
+    source = Column(String, nullable=True)           # maharashtra_industry | remotive | jobicy | employer
+    source_job_id = Column(String, nullable=True)    # unique ID from external source
+    fetched_at = Column(DateTime, nullable=True)     # when first ingested
+    last_seen_at = Column(DateTime, nullable=True)   # updated on every sync pass
     title = Column(String)
     description = Column(Text)
     sector = Column(String, nullable=True)
