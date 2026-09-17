@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { getJobById, getSkillGap, getSavedJobIds, saveJob, unsaveJob } from '../../services/api';
+import { getJobById, getSkillGap, getJobSkillGap, getWhyRecommended, getSavedJobIds, saveJob, unsaveJob } from '../../services/api';
 import { Button, Spinner, Badge, Card } from '../../components/ui';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle2, XCircle, ExternalLink, Bookmark } from 'lucide-react';
+import { CheckCircle2, XCircle, ExternalLink, Bookmark, Sparkles, BookOpen, ArrowUpRight } from 'lucide-react';
 
 function renderFormattedDescription(desc: string) {
   if (!desc) return null;
@@ -38,6 +38,7 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
   const { isLoggedIn, isStudent } = useAuth();
   const [job, setJob] = useState<any>(null);
   const [gap, setGap] = useState<any>(null);
+  const [whyRec, setWhyRec] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
 
@@ -45,9 +46,10 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
     if (!jobId) return;
     Promise.all([
       getJobById(jobId.toString()),
-      isLoggedIn && isStudent ? getSkillGap(jobId.toString()).catch(()=>({data:null})) : Promise.resolve({data:null}),
+      isLoggedIn && isStudent ? getJobSkillGap(jobId.toString()).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+      isLoggedIn && isStudent ? getWhyRecommended(jobId.toString()).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
       isLoggedIn ? getSavedJobIds().catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
-    ]).then(([jobRes, gapRes, savedRes]) => {
+    ]).then(([jobRes, gapRes, whyRes, savedRes]) => {
       // API returns { job: {...}, employer: {...}, company_name: "...", apply_url: "...", required_skills: [...], resources: [...] }
       const raw = jobRes.data;
       const jobObj = raw?.job || raw;
@@ -59,7 +61,8 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
         required_skills: raw?.required_skills || [],
         resources: raw?.resources || [],
       });
-      if(gapRes.data) setGap(gapRes.data);
+      if (gapRes?.data) setGap(gapRes.data);
+      if (whyRes?.data) setWhyRec(whyRes.data);
       if (Array.isArray(savedRes?.data)) {
         setIsSaved(savedRes.data.includes(Number(jobId)));
       }
@@ -152,39 +155,133 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
         </div>
       </div>
 
+      {/* Why This Job Is Recommended */}
+      {whyRec && whyRec.reasons?.length > 0 && (
+        <Card className="p-6 border border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50/60 to-indigo-50/40 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-2xl space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">Why This Position Matches You</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Algorithmic alignment with your profile competencies and regional demand</p>
+            </div>
+          </div>
+
+          <ul className="space-y-2 pt-1 text-xs text-gray-700 dark:text-gray-300">
+            {whyRec.reasons.map((r: string, idx: number) => (
+              <li key={idx} className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-1.5 shrink-0" />
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {/* Skill Match & Gap Analysis */}
       {gap && (
-        <Card className="p-6 border-2 border-indigo-100">
-          <h2 className="text-xl font-bold mb-4 flex items-center justify-between">
-            Skill Match Analysis
-            <Badge color={gap.match_percentage >= 70 ? 'green' : 'orange'}>{Math.round(gap.match_percentage)}% Match</Badge>
-          </h2>
-          
-          <div className="mb-6">
-            <h3 className="font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Skills you have</span>
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {gap.matched_skills?.map((s:any) => <Badge key={s.id} color="green">{s.name}</Badge>)}
-              {!gap.matched_skills?.length && <span className="text-sm text-gray-500">None</span>}
+        <Card className="p-6 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-6 dark:bg-gray-800">
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Skill Gap & Readiness Analysis</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Comparison of your verified skills against employer requirements</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                (gap.match_pct || gap.match_percentage) >= 70
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+              }`}>
+                {gap.match_pct || Math.round(gap.match_percentage || 0)}% Match
+              </span>
+              {gap.readiness_pct && (
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  {gap.readiness_pct}% Job Ready
+                </span>
+              )}
             </div>
           </div>
           
-          <div>
-            <h3 className="font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
-              <XCircle className="w-4 h-4 text-red-500" />
-              <span>Skills to acquire</span>
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {gap.missing_skills?.map((s:any) => (
-                <div key={s.id} className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-1.5 rounded-full text-sm font-medium border border-red-200">
-                  {s.name}
-                  <button onClick={() => onNavigate('student/skill-detail', { skillId: s.id })} className="text-xs bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700">Learn &rarr;</button>
-                </div>
-              ))}
-              {!gap.missing_skills?.length && <span className="text-sm text-gray-500">None</span>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Matched Skills */}
+            <div className="space-y-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Skills You Possess ({gap.matched_skills?.length || 0})</span>
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {gap.matched_skills?.map((s: any) => (
+                  <span key={s.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    {s.name}
+                    {s.proficiency && <span className="text-[10px] text-emerald-600 font-normal">({s.proficiency})</span>}
+                  </span>
+                ))}
+                {!gap.matched_skills?.length && (
+                  <span className="text-xs text-gray-400 italic">No direct profile skill matches recorded yet.</span>
+                )}
+              </div>
+            </div>
+            
+            {/* Missing Skills */}
+            <div className="space-y-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                <XCircle className="w-4 h-4 text-amber-500" />
+                <span>Skills to Acquire ({gap.missing_skills?.length || 0})</span>
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {gap.missing_skills?.map((s: any) => (
+                  <span key={s.id} className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200 px-2.5 py-1 rounded-lg text-xs font-medium border border-amber-200 dark:border-amber-800">
+                    <span>{s.name}</span>
+                    <button 
+                      onClick={() => onNavigate('student/skill-detail', { skillId: s.id })} 
+                      className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    >
+                      Learn &rarr;
+                    </button>
+                  </span>
+                ))}
+                {!gap.missing_skills?.length && (
+                  <span className="text-xs text-emerald-600 font-medium">You possess 100% of the required skills!</span>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Recommended Technical Courses to bridge gap */}
+          {gap.recommended_courses?.length > 0 && (
+            <div className="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-blue-600" />
+                <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                  Recommended Curricula to Bridge This Skill Gap
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {gap.recommended_courses.map((c: any) => (
+                  <div key={c.id} className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-750 flex flex-col justify-between space-y-2">
+                    <div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                        {c.course_code || 'COURSE'}
+                      </span>
+                      <h5 className="font-bold text-xs text-gray-900 dark:text-white mt-1.5 line-clamp-1">{c.title}</h5>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{c.domain} &bull; {c.duration_weeks} weeks</p>
+                    </div>
+
+                    <button
+                      onClick={() => onNavigate('student/courses')}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline pt-1 cursor-pointer"
+                    >
+                      <span>View Course</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

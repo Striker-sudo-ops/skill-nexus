@@ -43,6 +43,9 @@ export const getSavedJobs = () => api.get('/jobs/saved');
 export const getSavedJobIds = () => api.get('/jobs/saved/ids');
 export const saveJob = (jobId: string | number) => api.post(`/jobs/${jobId}/save`);
 export const unsaveJob = (jobId: string | number) => api.delete(`/jobs/${jobId}/save`);
+export const getJobSkillGap = (jobId: string | number) => api.get(`/jobs/${jobId}/skill-gap`);
+export const getWhyRecommended = (jobId: string | number) => api.get(`/jobs/${jobId}/why-recommended`);
+export const getSalaryInsights = () => api.get('/analytics/salary-insights');
 
 // ── Job Alerts ───────────────────────────────────────────────────────────────
 export const getJobAlerts = () => api.get('/job-alerts');

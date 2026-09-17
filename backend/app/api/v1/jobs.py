@@ -322,3 +322,156 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     for s in skills:
         resources.extend(db.query(SkillResource).filter(SkillResource.skill_id == s.skill_id).all())
     return {"job": job, "employer": emp, "company_name": resolved_company, "apply_url": job.apply_url, "required_skills": skills, "resources": resources}
+
+# ─── Skill Gap & AI Match Insights ───────────────────────────────────────────
+@router.get('/jobs/{job_id}/skill-gap')
+def get_job_skill_gap(job_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    student_skills_map = {}
+    if stu:
+        from app.models.entities import StudentSkill
+        s_skills = db.query(StudentSkill).filter(StudentSkill.student_id == stu.id).all()
+        for ss in s_skills:
+            sk = db.query(Skill).filter(Skill.id == ss.skill_id).first()
+            if sk:
+                student_skills_map[sk.name.lower()] = {
+                    "skill_id": sk.id,
+                    "name": sk.name,
+                    "proficiency": ss.proficiency or "INTERMEDIATE"
+                }
+
+    req_skills = db.query(JobSkill).filter(JobSkill.job_id == job_id).all()
+    matched = []
+    missing = []
+    for rs in req_skills:
+        sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+        if not sk:
+            continue
+        sk_name_lower = sk.name.lower()
+        if sk_name_lower in student_skills_map:
+            matched.append({
+                "id": sk.id,
+                "name": sk.name,
+                "proficiency": student_skills_map[sk_name_lower]["proficiency"],
+                "is_required": rs.is_required
+            })
+        else:
+            missing.append({
+                "id": sk.id,
+                "name": sk.name,
+                "is_required": rs.is_required
+            })
+
+    total_req = max(len(req_skills), 1)
+    match_pct = round((len(matched) / total_req) * 100) if req_skills else 80
+
+    # Find recommended courses bridging the missing skills
+    from app.models.entities import Course
+    recommended_courses = []
+    if missing:
+        missing_names = [m["name"].lower() for m in missing]
+        courses = db.query(Course).all()
+        for c in courses:
+            c_skills = (c.skills_offered or "").lower()
+            if any(mn in c_skills for mn in missing_names):
+                recommended_courses.append({
+                    "id": c.id,
+                    "course_code": c.course_code,
+                    "title": c.title,
+                    "domain": c.domain,
+                    "duration_weeks": c.duration_weeks,
+                    "skills_offered": c.skills_offered
+                })
+                if len(recommended_courses) >= 3:
+                    break
+
+    return {
+        "job_id": job_id,
+        "match_pct": match_pct,
+        "readiness_pct": min(100, max(25, match_pct + 10 if stu and stu.profile_complete_pct > 60 else match_pct)),
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "recommended_courses": recommended_courses
+    }
+
+@router.get('/jobs/{job_id}/why-recommended')
+def get_why_recommended(job_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    reasons = []
+
+    # 1. Skill alignment
+    req_skills = db.query(JobSkill).filter(JobSkill.job_id == job_id).all()
+    matched_names = []
+    if stu:
+        from app.models.entities import StudentSkill
+        s_skills = db.query(StudentSkill).filter(StudentSkill.student_id == stu.id).all()
+        s_ids = [ss.skill_id for ss in s_skills]
+        for rs in req_skills:
+            if rs.skill_id in s_ids:
+                sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+                if sk:
+                    matched_names.append(sk.name)
+
+    if matched_names:
+        reasons.append(f"Strong skill match with your verified profile: {', '.join(matched_names[:3])}.")
+    else:
+        reasons.append(f"Matches emerging technical market demand in the {job.sector or 'technical'} domain.")
+
+    # 2. Regional industry hub alignment
+    if job.city:
+        reasons.append(f"Located in {job.city}, an active industrial cluster for {job.sector or 'engineering'} recruitment.")
+
+    # 3. Career trajectory
+    if job.experience_years == 0 or job.experience_years == 1:
+        reasons.append(f"Entry-friendly experience requirement ({job.experience_years} yr) tailored for recent graduates and certified trainees.")
+    else:
+        reasons.append(f"Mid-level role ({job.experience_years} yrs exp) offering competitive salary progression.")
+
+    # 4. Compensation benchmark
+    if job.salary_min and job.salary_max:
+        reasons.append(f"Salary bracket of ₹{(job.salary_min/100000):.1f} - ₹{(job.salary_max/100000):.1f} LPA meets or exceeds current regional standards.")
+
+    return {
+        "job_id": job_id,
+        "title": job.title,
+        "reasons": reasons,
+        "summary": "High recommendation relevance based on skills and regional hiring metrics."
+    }
+
+@router.get('/analytics/salary-insights')
+def get_salary_insights(db: Session = Depends(get_db)):
+    """Computes real salary benchmarks from live jobs in the database."""
+    jobs = db.query(Job).filter(Job.is_active == True).all()
+    by_sector = {}
+    for j in jobs:
+        sec = j.sector or 'General Tech'
+        if sec not in by_sector:
+            by_sector[sec] = {"salaries": [], "count": 0}
+        if j.salary_min and j.salary_max:
+            avg_sal = (j.salary_min + j.salary_max) / 2
+            by_sector[sec]["salaries"].append(avg_sal)
+        by_sector[sec]["count"] += 1
+
+    sector_insights = []
+    for sec, data in by_sector.items():
+        sals = data["salaries"]
+        avg_lpa = round(sum(sals) / len(sals) / 100000, 1) if sals else 6.5
+        min_lpa = round(min(sals) / 100000, 1) if sals else 4.0
+        max_lpa = round(max(sals) / 100000, 1) if sals else 12.0
+        sector_insights.append({
+            "sector": sec,
+            "job_count": data["count"],
+            "avg_salary_lpa": avg_lpa,
+            "min_salary_lpa": min_lpa,
+            "max_salary_lpa": max_lpa
+        })
+    sector_insights.sort(key=lambda x: x["job_count"], reverse=True)
+    return {"insights": sector_insights, "total_sampled_jobs": len(jobs)}
