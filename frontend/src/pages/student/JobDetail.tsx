@@ -4,6 +4,36 @@ import { Button, Spinner, Badge, Card } from '../../components/ui';
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
 
+function renderFormattedDescription(desc: string) {
+  if (!desc) return null;
+
+  const hasHtml = /<[a-z][\s\S]*>/i.test(desc);
+
+  if (hasHtml) {
+    const cleanHtml = desc
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+      .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+
+    return (
+      <div
+        className="text-gray-700 text-sm leading-relaxed space-y-3 [&>p]:mb-3 [&>ul]:list-disc [&>ul]:pl-5 [&>ul]:mb-3 [&>ol]:list-decimal [&>ol]:pl-5 [&>ol]:mb-3 [&>li]:mb-1 [&>h2]:text-base [&>h2]:font-bold [&>h2]:text-gray-900 [&>h2]:mt-4 [&>h2]:mb-2 [&>h3]:text-sm [&>h3]:font-bold [&>h3]:text-gray-900 [&>h3]:mt-3 [&>h3]:mb-1.5 [&>h4]:text-sm [&>h4]:font-bold [&>h4]:text-gray-900 [&>h4]:mt-3 [&>h4]:mb-1.5 [&>strong]:font-semibold [&>strong]:text-gray-900 [&>b]:font-semibold [&>b]:text-gray-900 [&>a]:text-blue-600 [&>a]:underline"
+        dangerouslySetInnerHTML={{ __html: cleanHtml }}
+      />
+    );
+  }
+
+  return (
+    <div className="text-gray-700 text-sm leading-relaxed space-y-3 whitespace-pre-line">
+      {desc}
+    </div>
+  );
+}
+
 export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavigate: (page: string, params?: any) => void }) {
   const { isLoggedIn, isStudent } = useAuth();
   const [job, setJob] = useState<any>(null);
@@ -57,8 +87,9 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
           {job.openings_count && <Badge color="gray">{job.openings_count} Openings</Badge>}
         </div>
 
-        <div className="prose max-w-none text-gray-700 whitespace-pre-line mb-8">
-          {job.description}
+        <div className="mb-8 border-t border-b border-gray-100 py-6">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4">Job Description & Responsibilities</h2>
+          {renderFormattedDescription(job.description)}
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
