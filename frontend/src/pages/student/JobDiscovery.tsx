@@ -9,6 +9,17 @@ interface JobDiscoveryProps {
   currentParams?: any;
 }
 
+function getSourceBadge(src: string) {
+  const s = (src || '').toLowerCase();
+  if (s.includes('adzuna')) return { label: 'Adzuna India', bg: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800' };
+  if (s.includes('jooble')) return { label: 'Jooble India', bg: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800' };
+  if (s.includes('ncs')) return { label: 'Govt • NCS', bg: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800' };
+  if (s.includes('mahaswayam') || s.includes('maha')) return { label: 'Govt • Mahaswayam', bg: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800' };
+  if (s.includes('remotive')) return { label: 'Remotive (Remote)', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800' };
+  if (s.includes('jobicy')) return { label: 'Jobicy (Remote)', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' };
+  return { label: s.replace('_', ' '), bg: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700' };
+}
+
 export default function JobDiscovery({ onNavigate, currentParams }: JobDiscoveryProps) {
   const { isLoggedIn } = useAuth();
   const [jobs, setJobs] = useState<any[]>([]);
@@ -21,6 +32,7 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
   const [type, setType] = useState('');
   const [city, setCity] = useState('');
   const [sector, setSector] = useState('');
+  const [source, setSource] = useState('');
   const [experience, setExperience] = useState('');
   const [salaryRange, setSalaryRange] = useState('');
 
@@ -40,7 +52,7 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
   useEffect(() => {
     fetchJobs(1);
     getJobCount().then(res => setTotalCount(res.data?.total_india || res.data?.count || 0)).catch(() => {});
-  }, [type, city, sector, experience, salaryRange]);
+  }, [type, city, sector, source, experience, salaryRange]);
 
   useEffect(() => {
     const timeout = setTimeout(() => fetchJobs(1), 400);
@@ -93,6 +105,7 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
         job_type: type || undefined,
         city: city || undefined,
         sector: sector || undefined,
+        source: source || undefined,
         experience_min,
         experience_max,
         salary_min,
@@ -116,11 +129,12 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
     setType('');
     setCity('');
     setSector('');
+    setSource('');
     setExperience('');
     setSalaryRange('');
   };
 
-  const hasActiveFilters = Boolean(q || type || city || sector || experience || salaryRange);
+  const hasActiveFilters = Boolean(q || type || city || sector || source || experience || salaryRange);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -189,19 +203,34 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
           />
         </div>
 
-        {/* Secondary Filter Row: Sector, Experience, Salary Range */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-gray-100 dark:border-gray-700/60">
+        {/* Secondary Filter Row: Sector, Source, Experience, Salary Range */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1 border-t border-gray-100 dark:border-gray-700/60">
           <Select 
             value={sector} 
             onChange={(e: any) => setSector(e.target.value)} 
             options={[
               { label: 'All Sectors', value: '' },
               { label: 'IT & Software', value: 'IT' },
+              { label: 'Data Science & AI', value: 'Data Science' },
               { label: 'Automotive & EV', value: 'Automotive' },
               { label: 'Manufacturing & Heavy Eng.', value: 'Manufacturing' },
               { label: 'Healthcare & Biotech', value: 'Healthcare' },
               { label: 'Renewable Energy', value: 'Renewable' },
-              { label: 'BFSI & FinTech', value: 'BFSI' }
+              { label: 'BFSI & FinTech', value: 'BFSI' },
+              { label: 'Civil & Infrastructure', value: 'Civil' }
+            ]} 
+          />
+          <Select 
+            value={source} 
+            onChange={(e: any) => setSource(e.target.value)} 
+            options={[
+              { label: 'All Sources (Live)', value: '' },
+              { label: 'Adzuna India Feed', value: 'adzuna' },
+              { label: 'Jooble India Feed', value: 'jooble' },
+              { label: 'NCS (Govt of India)', value: 'ncs' },
+              { label: 'Mahaswayam (Govt MH)', value: 'mahaswayam' },
+              { label: 'Remotive (Remote/India)', value: 'remotive' },
+              { label: 'Jobicy (APAC/India)', value: 'jobicy' }
             ]} 
           />
           <Select 
@@ -322,11 +351,14 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
                         {experienceYears === 0 ? 'Fresher' : `${experienceYears}+ yrs exp`}
                       </span>
                     )}
-                    {source && (
-                      <span className="text-[10px] text-gray-400 font-mono">
-                        via {source.replace('_', ' ')}
-                      </span>
-                    )}
+                    {source && (() => {
+                      const sb = getSourceBadge(source);
+                      return (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${sb.bg}`}>
+                          {sb.label}
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {salaryMin && (

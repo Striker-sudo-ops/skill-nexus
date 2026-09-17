@@ -121,6 +121,7 @@ export const exportReport = () => api.get('/admin/export-report', { responseType
 export const syncLiveTelemetry = () => api.post('/admin/sync-live-data');
 export const wipeTelemetry = () => api.post('/admin/wipe-telemetry');
 export const getLastSync = () => api.get('/admin/last-sync');
+export const getSourceStats = () => api.get('/admin/source-stats');
 
 // ── Trainer ──────────────────────────────────────────────────────────────────
 export const getTrainerProfile = () => api.get('/trainer/profile');

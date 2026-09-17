@@ -21,14 +21,19 @@ class JobAlertCreate(BaseModel):
 def search_jobs(
     q: Optional[str] = None, skill_ids: Optional[str] = None, domain: Optional[str] = None,
     city: Optional[str] = None, state: Optional[str] = None, job_type: Optional[str] = None,
-    sector: Optional[str] = None,
+    sector: Optional[str] = None, source: Optional[str] = None,
     experience_min: Optional[int] = None, experience_max: Optional[int] = None,
     salary_min: Optional[int] = None, salary_max: Optional[int] = None,
+    include_expired: Optional[bool] = False,
     lat: Optional[float] = None, lng: Optional[float] = None,
     page: int = 1, per_page: int = 20, db: Session = Depends(get_db)
 ):
-    query = db.query(Job).filter(Job.is_active == True)
+    query = db.query(Job)
+    if not include_expired:
+        query = query.filter(Job.is_active == True)
 
+    if source:
+        query = query.filter(Job.source == source)
     if q:
         query = query.filter((Job.title.ilike(f'%{q}%')) | (Job.description.ilike(f'%{q}%')) | (Job.company_name.ilike(f'%{q}%')))
     if city:
@@ -87,6 +92,7 @@ def search_jobs(
             "openings_count": j.openings_count or 1,
             "sector": j.sector,
             "source": j.source,
+            "is_active": j.is_active,
             "last_seen_at": j.last_seen_at.isoformat() if j.last_seen_at else None,
             "required_skills": skill_objs,
             "distance": dist,

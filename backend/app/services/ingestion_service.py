@@ -1,619 +1,706 @@
-import requests
-import html
+"""
+Multi-Source Real-Time Job Ingestion Service
+============================================
+Sources:
+  1. Adzuna India API        (ADZUNA_APP_ID + ADZUNA_APP_KEY)
+  2. Jooble India API        (JOOBLE_API_KEY)
+  3. Remotive API            (no key required)
+  4. Jobicy API              (no key required)
+  5. NCS Portal Scraper      (no key required — National Career Service)
+  6. Mahaswayam Scraper      (no key required — Maharashtra state jobs)
+
+District Intelligence: computed dynamically from live ingested job data.
+Expiry: jobs absent from the current sync are auto-marked inactive.
+Re-activation: expired jobs reappear and are re-activated in future syncs.
+"""
+
 import re
+import html
+import os
+import time
+import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from collections import Counter
+from typing import Optional, Dict, List
+
+import requests
 from sqlalchemy.orm import Session
-from app.models.entities import Job, JobSkill, Skill, DistrictIntelligence, Employer, User, SystemSetting
+from sqlalchemy import func, and_, or_
+
+from app.models.entities import (
+    Job, JobSkill, Skill, DistrictIntelligence,
+    Employer, User, SystemSetting,
+)
 from app.core.security import hash_password
 
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
 
-# Maharashtra cities with coordinates
+logger = logging.getLogger(__name__)
+
+# ─── API keys (set as environment variables on Render — never hardcode) ────────
+ADZUNA_APP_ID    = os.getenv("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY   = os.getenv("ADZUNA_APP_KEY", "")
+JOOBLE_API_KEY   = os.getenv("JOOBLE_API_KEY", "")
+DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
+
+# ─── Maharashtra cities + geo-coordinates ─────────────────────────────────────
 MH_CITIES = [
-    {"city": "Pune",       "lat": 18.5204, "lng": 73.8567},
-    {"city": "Mumbai",     "lat": 19.0760, "lng": 72.8777},
-    {"city": "Nagpur",     "lat": 21.1458, "lng": 79.0882},
-    {"city": "Nashik",     "lat": 19.9975, "lng": 73.7898},
-    {"city": "Aurangabad", "lat": 19.8762, "lng": 75.3433},
-    {"city": "Solapur",    "lat": 17.6805, "lng": 75.9064},
-    {"city": "Kolhapur",   "lat": 16.7050, "lng": 74.2433},
-    {"city": "Amravati",   "lat": 20.9320, "lng": 77.7523},
-    {"city": "Thane",      "lat": 19.2183, "lng": 72.9781},
-    {"city": "Nanded",     "lat": 19.1383, "lng": 77.3210},
+    {"city": "Pune",        "lat": 18.5204, "lng": 73.8567},
+    {"city": "Mumbai",      "lat": 19.0760, "lng": 72.8777},
+    {"city": "Nagpur",      "lat": 21.1458, "lng": 79.0882},
+    {"city": "Nashik",      "lat": 19.9975, "lng": 73.7898},
+    {"city": "Aurangabad",  "lat": 19.8762, "lng": 75.3433},
+    {"city": "Solapur",     "lat": 17.6805, "lng": 75.9064},
+    {"city": "Kolhapur",    "lat": 16.7050, "lng": 74.2433},
+    {"city": "Amravati",    "lat": 20.9320, "lng": 77.7523},
+    {"city": "Thane",       "lat": 19.2183, "lng": 72.9781},
+    {"city": "Nanded",      "lat": 19.1383, "lng": 77.3210},
 ]
+MH_CITY_MAP = {c["city"].lower(): c for c in MH_CITIES}
 
-SKILL_KEYWORD_MAP = {
-    "python": "Python", "react": "React", "reactjs": "React",
-    "docker": "Docker", "kubernetes": "Docker",
-    "aws": "AWS", "amazon web services": "AWS", "gcp": "AWS", "cloud": "AWS",
-    "java": "Java", "spring": "Java",
-    "sql": "SQL", "mysql": "SQL", "postgresql": "SQL", "database": "SQL",
-    "machine learning": "Machine Learning", "pytorch": "Machine Learning",
-    "tensorflow": "Machine Learning", "scikit": "Machine Learning", "ai": "Machine Learning",
-    "data visualization": "Data Visualization", "tableau": "Data Visualization",
-    "power bi": "Data Visualization", "matplotlib": "Data Visualization",
-    "figma": "Figma", "ui/ux": "Figma", "ux design": "Figma",
-    "autocad": "AutoCAD", "cad": "AutoCAD",
-    "solidworks": "SolidWorks",
-    "plc": "PLC Programming", "scada": "PLC Programming",
-    "circuit": "Circuit Design",
-    "nursing": "Clinical Nursing",
-    "patient care": "Patient Care",
-    "seo": "SEO", "digital marketing": "SEO",
-    "sensor": "Sensor Fusion",
-    "battery": "Battery Management", "bms": "Battery Management", "ev": "Battery Management",
-    "can bus": "CAN Bus",
-    "structural": "Structural Analysis",
-    "surveying": "Surveying", "gis": "Surveying",
-    "concrete": "Concrete Technology",
-    "power system": "Power Systems", "grid": "Power Systems",
-    "thermodynamic": "Thermodynamics",
-    "phlebotomy": "Phlebotomy",
+# Sources managed by the ingestion pipeline (only these are expired per-sync)
+MANAGED_SOURCES = {"adzuna", "jooble", "remotive", "jobicy", "ncs", "mahaswayam"}
+
+# ─── Sector inference keywords ────────────────────────────────────────────────
+SECTOR_KEYWORDS: Dict[str, List[str]] = {
+    "IT":            ["software", "developer", "programmer", "devops", "cloud", "backend",
+                      "frontend", "fullstack", "python", "java", "react", "node", "angular"],
+    "Data Science":  ["data scientist", "machine learning", "data analyst", "ai ", "analytics",
+                      "nlp", "deep learning", "bi analyst", "power bi", "tableau"],
+    "Mechanical":    ["mechanical", "cad", "solidworks", "autocad", "design engineer",
+                      "automobile", "ev ", "automotive", "production engineer"],
+    "Electrical":    ["electrical", "power system", "plc", "scada", "circuit", "embedded",
+                      "electronics", "vlsi", "instrumentation"],
+    "Healthcare":    ["nurse", "doctor", "hospital", "clinical", "medical", "pharmacist",
+                      "lab technician", "patient care", "radiology", "paramedic"],
+    "Manufacturing": ["production", "manufacturing", "quality", "cnc", "operator",
+                      "tooling", "machinist", "shop floor", "lean"],
+    "Civil":         ["civil", "structural", "construction", "surveyor", "gis", "concrete",
+                      "site engineer", "quantity surveyor"],
+    "Marketing":     ["marketing", "seo", "digital marketing", "brand", "content",
+                      "sales", "business development", "growth hacker"],
+    "Design":        ["ui/ux", "figma", "graphic design", "product design", "ux research"],
+    "Finance":       ["finance", "accounting", "ca ", "cfa", "auditor", "banker", "fintech",
+                      "chartered accountant", "taxation"],
 }
 
-# Sourced from MSDE Annual Report 2023-24 and data.gov.in Maharashtra datasets
-MH_DISTRICT_DATA = [
-    {"district": "Pune",       "primary_sector": "IT and ITES",         "demand_index": 96.2, "current_capacity": 52000, "shortage_deficit": 18400, "status": "CRITICAL_SHORTAGE", "top_demand_skill": "Machine Learning",  "recommended_seats": 70400, "recommended_action": "Build New ITI Wing: AI/ML"},
-    {"district": "Mumbai",     "primary_sector": "BFSI and FinTech",    "demand_index": 94.8, "current_capacity": 61000, "shortage_deficit": 22000, "status": "CRITICAL_SHORTAGE", "top_demand_skill": "Python",            "recommended_seats": 83000, "recommended_action": "Scale Existing Centre: FinTech"},
-    {"district": "Nagpur",     "primary_sector": "Automotive",          "demand_index": 88.4, "current_capacity": 18000, "shortage_deficit": 9200,  "status": "HIGH_DEMAND",       "top_demand_skill": "CAN Bus",           "recommended_seats": 27200, "recommended_action": "Build New ITI Wing: EV Tech"},
-    {"district": "Nashik",     "primary_sector": "Agro-Processing",     "demand_index": 79.1, "current_capacity": 14000, "shortage_deficit": 5800,  "status": "HIGH_DEMAND",       "top_demand_skill": "PLC Programming",   "recommended_seats": 19800, "recommended_action": "Upskill Existing Faculty: Automation"},
-    {"district": "Aurangabad", "primary_sector": "Manufacturing",       "demand_index": 85.6, "current_capacity": 16500, "shortage_deficit": 8100,  "status": "HIGH_DEMAND",       "top_demand_skill": "SolidWorks",        "recommended_seats": 24600, "recommended_action": "Build New ITI Wing: Industry 4.0"},
-    {"district": "Solapur",    "primary_sector": "Textile and MSME",    "demand_index": 68.3, "current_capacity": 9200,  "shortage_deficit": 2100,  "status": "MODERATE",          "top_demand_skill": "Structural Analysis","recommended_seats": 11300, "recommended_action": "Add Short-term Skill Module"},
-    {"district": "Kolhapur",   "primary_sector": "Foundry and Forging", "demand_index": 72.1, "current_capacity": 10800, "shortage_deficit": 3400,  "status": "MODERATE",          "top_demand_skill": "AutoCAD",           "recommended_seats": 14200, "recommended_action": "Upskill Faculty: CAD/CAM"},
-    {"district": "Thane",      "primary_sector": "Chemicals and IT",    "demand_index": 82.7, "current_capacity": 21000, "shortage_deficit": 7600,  "status": "HIGH_DEMAND",       "top_demand_skill": "React",             "recommended_seats": 28600, "recommended_action": "Scale Existing Centre: IT"},
-    {"district": "Amravati",   "primary_sector": "Agriculture Tech",    "demand_index": 61.4, "current_capacity": 7800,  "shortage_deficit": 1200,  "status": "MODERATE",          "top_demand_skill": "Data Visualization","recommended_seats": 9000,  "recommended_action": "Launch New Short Course: AgriTech"},
-    {"district": "Nanded",     "primary_sector": "Healthcare",          "demand_index": 74.8, "current_capacity": 6400,  "shortage_deficit": 3100,  "status": "HIGH_DEMAND",       "top_demand_skill": "Clinical Nursing",  "recommended_seats": 9500,  "recommended_action": "Build New Paramedical Wing"},
-    {"district": "Raigad",     "primary_sector": "Petrochemicals",      "demand_index": 70.2, "current_capacity": 8900,  "shortage_deficit": 2400,  "status": "MODERATE",          "top_demand_skill": "Circuit Design",    "recommended_seats": 11300, "recommended_action": "Partner with Industry: Chemical ITI"},
-    {"district": "Satara",     "primary_sector": "Renewable Energy",    "demand_index": 77.9, "current_capacity": 7200,  "shortage_deficit": 2800,  "status": "HIGH_DEMAND",       "top_demand_skill": "Power Systems",     "recommended_seats": 10000, "recommended_action": "Build New Wing: Solar Tech"},
+# ─── Skill keyword → canonical name ───────────────────────────────────────────
+SKILL_KEYWORD_MAP: Dict[str, str] = {
+    "python": "Python", "django": "Python", "flask": "Python", "fastapi": "Python",
+    "react": "React", "reactjs": "React", "next.js": "React", "nextjs": "React",
+    "docker": "Docker", "kubernetes": "Docker", "k8s": "Docker",
+    "aws": "AWS", "amazon web services": "AWS", "gcp": "AWS", "azure": "AWS",
+    "cloud computing": "AWS",
+    "java": "Java", "spring boot": "Java", "spring": "Java", "j2ee": "Java",
+    "sql": "SQL", "mysql": "SQL", "postgresql": "SQL", "oracle": "SQL",
+    "machine learning": "Machine Learning", "pytorch": "Machine Learning",
+    "tensorflow": "Machine Learning", "data science": "Machine Learning",
+    "scikit": "Machine Learning", "deep learning": "Machine Learning",
+    "data visualization": "Data Visualization", "tableau": "Data Visualization",
+    "power bi": "Data Visualization", "powerbi": "Data Visualization",
+    "figma": "Figma", "ui/ux": "Figma", "ux design": "Figma",
+    "autocad": "AutoCAD", "cad/cam": "AutoCAD",
+    "solidworks": "SolidWorks", "catia": "SolidWorks", "creo": "SolidWorks",
+    "plc": "PLC Programming", "scada": "PLC Programming", "hmi": "PLC Programming",
+    "circuit": "Circuit Design", "pcb": "Circuit Design", "vlsi": "Circuit Design",
+    "nursing": "Clinical Nursing", "clinical nurse": "Clinical Nursing",
+    "patient care": "Patient Care", "hospital": "Patient Care",
+    "seo": "SEO", "digital marketing": "SEO", "sem": "SEO",
+    "sensor fusion": "Sensor Fusion", "iot": "Sensor Fusion", "embedded": "Sensor Fusion",
+    "battery management": "Battery Management", "bms": "Battery Management",
+    "electric vehicle": "Battery Management", " ev ": "Battery Management",
+    "can bus": "CAN Bus", "canbus": "CAN Bus", "automotive": "CAN Bus",
+    "structural analysis": "Structural Analysis", "ansys": "Structural Analysis",
+    "fea": "Structural Analysis", "finite element": "Structural Analysis",
+    "surveying": "Surveying", "gis": "Surveying",
+    "power systems": "Power Systems", "smart grid": "Power Systems",
+    "renewable energy": "Power Systems", "solar": "Power Systems",
+    "thermodynamics": "Thermodynamics", "hvac": "Thermodynamics",
+    "phlebotomy": "Phlebotomy", "lab technician": "Phlebotomy",
+    "concrete": "Concrete Technology", "civil engineering": "Concrete Technology",
+}
+
+# ─── Baseline skill seed data (metadata, NOT job listings) ────────────────────
+BASELINE_SKILLS = [
+    {"name": "Python",             "domain": "IT",           "desc": "Backend, APIs and automation",                       "salary": 1200000, "score": 92.0},
+    {"name": "React",              "domain": "IT",           "desc": "Component-based frontend framework",                 "salary": 1000000, "score": 90.0},
+    {"name": "Docker",             "domain": "IT",           "desc": "Containerisation and microservices",                 "salary": 1300000, "score": 88.0},
+    {"name": "AWS",                "domain": "IT",           "desc": "Cloud infrastructure & deployment",                  "salary": 1400000, "score": 93.0},
+    {"name": "Java",               "domain": "IT",           "desc": "Enterprise backend & microservices",                 "salary": 1100000, "score": 86.0},
+    {"name": "Machine Learning",   "domain": "Data Science", "desc": "Predictive modelling & neural networks",            "salary": 1600000, "score": 96.0},
+    {"name": "SQL",                "domain": "Data Science", "desc": "Relational query optimisation & analytics",          "salary": 1050000, "score": 91.0},
+    {"name": "Data Visualization", "domain": "Data Science", "desc": "Dashboarding and telemetry visualisation",          "salary": 1100000, "score": 84.0},
+    {"name": "AutoCAD",            "domain": "Mechanical",   "desc": "Engineering drafting and modelling",                "salary": 600000,  "score": 72.0},
+    {"name": "SolidWorks",         "domain": "Mechanical",   "desc": "3-D parametric CAD and assemblies",                 "salary": 750000,  "score": 85.0},
+    {"name": "Battery Management", "domain": "Mechanical",   "desc": "EV BMS architecture & thermal safety",              "salary": 1350000, "score": 95.0},
+    {"name": "CAN Bus",            "domain": "Mechanical",   "desc": "Automotive CAN communications",                     "salary": 950000,  "score": 91.0},
+    {"name": "Sensor Fusion",      "domain": "Mechanical",   "desc": "Multi-sensor telemetry and IoT",                    "salary": 1100000, "score": 88.0},
+    {"name": "Structural Analysis","domain": "Mechanical",   "desc": "FEA-based stress simulation",                       "salary": 750000,  "score": 79.0},
+    {"name": "Thermodynamics",     "domain": "Mechanical",   "desc": "Heat transfer, HVAC and thermal systems",           "salary": 720000,  "score": 76.0},
+    {"name": "PLC Programming",    "domain": "Electrical",   "desc": "Industrial PLCs and SCADA",                         "salary": 850000,  "score": 89.0},
+    {"name": "Circuit Design",     "domain": "Electrical",   "desc": "Analog and digital PCB design",                    "salary": 720000,  "score": 82.0},
+    {"name": "Power Systems",      "domain": "Electrical",   "desc": "Grid power distribution and renewables",            "salary": 780000,  "score": 80.0},
+    {"name": "Clinical Nursing",   "domain": "Healthcare",   "desc": "Inpatient care and clinical protocols",             "salary": 520000,  "score": 89.0},
+    {"name": "Patient Care",       "domain": "Healthcare",   "desc": "Hospital vital monitoring and diagnostics",         "salary": 480000,  "score": 92.0},
+    {"name": "Figma",              "domain": "Design",       "desc": "UI/UX prototyping and design systems",              "salary": 950000,  "score": 87.0},
+    {"name": "SEO",                "domain": "Marketing",    "desc": "Search engine visibility and organic growth",       "salary": 650000,  "score": 80.0},
+    {"name": "Surveying",          "domain": "Civil",        "desc": "Geospatial surveying and GIS",                     "salary": 620000,  "score": 74.0},
+    {"name": "Concrete Technology","domain": "Civil",        "desc": "Concrete mix design and construction QC",           "salary": 580000,  "score": 71.0},
 ]
 
 
-# Verified Maharashtra Industry Openings across major industrial clusters
-MAHARASHTRA_INDUSTRY_ROLES = [
-    {
-        "title": "EV Battery Management System (BMS) Calibration Specialist",
-        "company_name": "Tata Motors",
-        "city": "Pune",
-        "sector": "Automotive & EV",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 850000,
-        "salary_max": 1500000,
-        "openings_count": 5,
-        "apply_url": "https://www.tatamotors.com/careers/",
-        "skills": ["Battery Management", "CAN Bus", "Python", "Sensor Fusion"],
-        "description": "<p><strong>Role Overview</strong></p><p>Tata Motors Passenger Vehicles EV Engineering division in Chakan, Pune is hiring a BMS Calibration Engineer. You will spearhead battery pack diagnostics, state-of-charge (SoC) algorithms, and thermal runaway prevention for our next-generation electric vehicle lineup.</p><h3>Key Responsibilities</h3><ul><li>Calibrate lithium-ion battery pack telemetry over CAN Bus vehicle networks.</li><li>Develop automated hardware-in-the-loop (HIL) test routines using Python.</li><li>Diagnose sensor fusion feedback across thermal, voltage, and current monitoring modules.</li><li>Collaborate with vehicle integration teams in Pune and UK design studios.</li></ul><h3>Candidate Profile</h3><p>B.E. / B.Tech in Electrical, Electronics, or Mechanical Engineering with practical exposure to electric powertrains, BMS architecture, or embedded automotive communications.</p>"
-    },
-    {
-        "title": "Embedded Powertrain & CAN Bus Firmware Engineer",
-        "company_name": "Bajaj Auto",
-        "city": "Pune",
-        "sector": "Automotive",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 750000,
-        "salary_max": 1300000,
-        "openings_count": 4,
-        "apply_url": "https://www.bajajauto.com/careers",
-        "skills": ["CAN Bus", "Circuit Design", "Python"],
-        "description": "<p><strong>About the Opportunity</strong></p><p>Join the R&D Center at Bajaj Auto in Akurdi, Pune. As an Embedded Firmware Engineer, you will architect real-time control units for high-performance two-wheelers and electric three-wheeler fleets.</p><h3>Key Responsibilities</h3><ul><li>Design, implement, and validate CAN Bus protocol stacks for powertrain control modules.</li><li>Perform board bring-up, schematic review, and hardware debugging.</li><li>Develop Python automated test benches for validation and regression testing.</li></ul><h3>Qualifications</h3><p>Degree in Electronics & Telecommunications, Embedded Systems, or Instrumentation Engineering.</p>"
-    },
-    {
-        "title": "Cloud DevOps & AWS Infrastructure Architect",
-        "company_name": "Persistent Systems",
-        "city": "Pune",
-        "sector": "IT",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 3,
-        "salary_min": 1000000,
-        "salary_max": 1800000,
-        "openings_count": 8,
-        "apply_url": "https://www.persistent.com/careers",
-        "skills": ["AWS", "Docker", "Python", "SQL"],
-        "description": "<p><strong>Position Summary</strong></p><p>Persistent Systems is seeking experienced Cloud DevOps Architects at our Hinjewadi Tech Park campus in Pune. You will build and scale resilient cloud infrastructures for global healthcare and financial enterprise clients.</p><h3>What You Will Do</h3><ul><li>Architect containerized microservices using Docker and Kubernetes on AWS.</li><li>Automate CI/CD pipelines and deployment orchestrations using Infrastructure-as-Code.</li><li>Implement cloud security posture management and distributed monitoring tools.</li></ul><h3>Required Skills</h3><p>Hands-on proficiency in AWS cloud services, container technologies, Linux administration, and Python/Bash scripting.</p>"
-    },
-    {
-        "title": "Industry 4.0 PLC & SCADA Automation Lead",
-        "company_name": "Bharat Forge",
-        "city": "Pune",
-        "sector": "Manufacturing",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 3,
-        "salary_min": 700000,
-        "salary_max": 1200000,
-        "openings_count": 3,
-        "apply_url": "https://www.bharatforge.com/careers",
-        "skills": ["PLC Programming", "Sensor Fusion", "SolidWorks"],
-        "description": "<p><strong>Job Purpose</strong></p><p>Bharat Forge is modernizing precision forging facilities into smart Industry 4.0 factories at Mundhwa, Pune. We are hiring an Automation Engineer to deploy interconnected PLC networks and industrial robotic arms.</p><h3>Key Deliverables</h3><ul><li>Program and commission Siemens/Rockwell PLC ladder logic and SCADA telemetry.</li><li>Integrate multi-axis robotic loaders with forging press controllers.</li><li>Collect sensor fusion vibration and thermal telemetry for predictive maintenance models.</li></ul><h3>Desired Background</h3><p>Diploma or Degree in Mechatronics, Electrical, or Instrumentation Engineering with hands-on shop-floor automation experience.</p>"
-    },
-    {
-        "title": "5G Network Systems & Python Automation Engineer",
-        "company_name": "Reliance Jio",
-        "city": "Mumbai",
-        "sector": "IT & Telecom",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 900000,
-        "salary_max": 1600000,
-        "openings_count": 10,
-        "apply_url": "https://careers.jio.com/",
-        "skills": ["Python", "Docker", "AWS", "SQL"],
-        "description": "<p><strong>Role Overview</strong></p><p>Reliance Jio Park at Ghansoli, Navi Mumbai is expanding its core 5G network intelligence unit. We are looking for software engineers who can develop automated telemetry and network slice provisioning engines.</p><h3>Responsibilities</h3><ul><li>Develop automated testing and telemetry ingestion pipelines using Python.</li><li>Containerize network function virtualizations using Docker and container orchestrators.</li><li>Optimize SQL databases for high-throughput telecom subscriber events.</li></ul><h3>Requirements</h3><p>B.Tech / MCA in Computer Science, IT, or Electronics with solid Python scripting and database fundamentals.</p>"
-    },
-    {
-        "title": "Full-Stack React & Enterprise Microservices Developer",
-        "company_name": "Tata Consultancy Services",
-        "city": "Mumbai",
-        "sector": "IT",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 750000,
-        "salary_max": 1400000,
-        "openings_count": 12,
-        "apply_url": "https://www.tcs.com/careers",
-        "skills": ["React", "Python", "SQL", "Java"],
-        "description": "<p><strong>About TCS Digital</strong></p><p>TCS Banyan Park in Mumbai is hiring Full-Stack Developers for our Banking & Financial Services practice. You will construct high-availability web applications and interactive banking portals.</p><h3>Primary Responsibilities</h3><ul><li>Build responsive user interfaces using React, TypeScript, and modern component design systems.</li><li>Develop scalable REST and GraphQL APIs backed by enterprise Java/Python services.</li><li>Write unit and integration test suites ensuring code coverage and security compliance.</li></ul><h3>Profile</h3><p>Graduates with demonstrable proficiency in modern web development frameworks, component architecture, and clean code principles.</p>"
-    },
-    {
-        "title": "Precision Tooling & CAD Mechanical Design Engineer",
-        "company_name": "Godrej & Boyce",
-        "city": "Mumbai",
-        "sector": "Mechanical",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 650000,
-        "salary_max": 1100000,
-        "openings_count": 4,
-        "apply_url": "https://www.godrej.com/careers",
-        "skills": ["SolidWorks", "AutoCAD", "Structural Analysis"],
-        "description": "<p><strong>Position Details</strong></p><p>The Tooling & Precision Engineering Division at Godrej & Boyce in Vikhroli, Mumbai is seeking a CAD Design Engineer to engineer specialized die-cast molds and sheet metal stamping tooling.</p><h3>Key Duties</h3><ul><li>Create complex 3D parametric CAD models and assembly drawings in SolidWorks.</li><li>Generate detailed 2D manufacturing blueprints and tolerance stacks in AutoCAD.</li><li>Perform finite element and structural stress simulations on tool components.</li></ul><h3>Requirements</h3><p>Degree/Diploma in Mechanical, Production, or Tool Design Engineering.</p>"
-    },
-    {
-        "title": "FinTech Data Analytics & Machine Learning Specialist",
-        "company_name": "HDFC Bank",
-        "city": "Mumbai",
-        "sector": "BFSI & FinTech",
-        "job_type": "Full-Time",
-        "proficiency_required": "ADVANCED",
-        "experience_years": 3,
-        "salary_min": 1200000,
-        "salary_max": 2000000,
-        "openings_count": 6,
-        "apply_url": "https://www.hdfcbank.com/careers",
-        "skills": ["Machine Learning", "Python", "SQL", "Data Visualization"],
-        "description": "<p><strong>Team Overview</strong></p><p>The AI & Advanced Analytics Center of Excellence at HDFC Bank Head Office in Bandra Kurla Complex (BKC), Mumbai is hiring Machine Learning Specialists for credit underwriting and real-time fraud detection engines.</p><h3>Core Responsibilities</h3><ul><li>Build, train, and deploy predictive machine learning models in Python.</li><li>Query massive petabyte-scale transaction databases with high-performance SQL.</li><li>Design visual decision dashboards for executive risk management committees.</li></ul><h3>Qualifications</h3><p>M.Tech, M.S., or B.Tech in Data Science, Statistics, Mathematics, or Computer Science.</p>"
-    },
-    {
-        "title": "Enterprise Python & Machine Learning Pipeline Engineer",
-        "company_name": "Infosys",
-        "city": "Nagpur",
-        "sector": "IT",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 800000,
-        "salary_max": 1400000,
-        "openings_count": 6,
-        "apply_url": "https://www.infosys.com/careers",
-        "skills": ["Python", "Machine Learning", "SQL", "Docker"],
-        "description": "<p><strong>Role Summary</strong></p><p>Infosys MIHAN SEZ campus in Nagpur is expanding its AI Delivery Center. You will implement production inference pipelines, data cleansing routines, and machine learning models for multinational manufacturing clients.</p><h3>Key Tasks</h3><ul><li>Develop production Python backend modules for data preprocessing and ML model serving.</li><li>Package and deploy microservices in Docker containers for cloud execution.</li><li>Collaborate with data scientists and clients across global delivery timelines.</li></ul>"
-    },
-    {
-        "title": "Automotive Assembly & CAN Bus Quality Engineer",
-        "company_name": "Mahindra Heavy Engines",
-        "city": "Nagpur",
-        "sector": "Automotive",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 600000,
-        "salary_max": 1050000,
-        "openings_count": 4,
-        "apply_url": "https://www.mahindra.com/careers",
-        "skills": ["CAN Bus", "SolidWorks", "AutoCAD"],
-        "description": "<p><strong>Overview</strong></p><p>Mahindra Heavy Engines facility in Butibori, Nagpur is hiring a Quality Engineer to oversee electronic engine testing and CAN Bus communications diagnostic routines.</p><h3>Responsibilities</h3><ul><li>Perform end-of-line diagnostic validation on heavy commercial vehicle diesel and hybrid engines.</li><li>Verify CAN Bus sensor communications and troubleshoot electronic control unit error logs.</li><li>Document quality non-conformances and drive root-cause corrective actions.</li></ul>"
-    },
-    {
-        "title": "Industrial Robotics & Assembly Automation Specialist",
-        "company_name": "Mahindra & Mahindra",
-        "city": "Nashik",
-        "sector": "Automotive",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 700000,
-        "salary_max": 1200000,
-        "openings_count": 5,
-        "apply_url": "https://www.mahindra.com/careers",
-        "skills": ["PLC Programming", "SolidWorks", "Sensor Fusion"],
-        "description": "<p><strong>About the Facility</strong></p><p>Mahindra Automotive Division in Satpur MIDC, Nashik manufactures world-class SUVs including the Thar and Scorpio-N. We are seeking an Automation Engineer for our advanced robotic weld and paint shop.</p><h3>Key Responsibilities</h3><ul><li>Maintain and program multi-axis ABB/Kuka robotic arms and safety interlocks.</li><li>Troubleshoot programmable logic controllers (PLCs) and HMI graphical panels.</li><li>Collaborate with maintenance teams to ensure 99%+ line availability.</li></ul>"
-    },
-    {
-        "title": "Smart Grid Power Systems & Energy Engineer",
-        "company_name": "Schneider Electric",
-        "city": "Nashik",
-        "sector": "Electrical",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 750000,
-        "salary_max": 1250000,
-        "openings_count": 3,
-        "apply_url": "https://www.se.com/in/en/about-us/careers/",
-        "skills": ["Power Systems", "Circuit Design", "PLC Programming"],
-        "description": "<p><strong>Opportunity</strong></p><p>Schneider Electric's smart energy manufacturing complex in Ambad MIDC, Nashik is hiring a Power Systems Engineer to build medium-voltage switchgear and digital substation automation panels.</p><h3>What You'll Do</h3><ul><li>Design power distribution schematics, single-line diagrams, and protection relays.</li><li>Configure smart grid telemetry interfaces and SCADA communication protocols.</li><li>Conduct factory acceptance testing (FAT) alongside utility grid clients.</li></ul>"
-    },
-    {
-        "title": "Automotive Die-Casting & CAD Component Design Lead",
-        "company_name": "Endurance Technologies",
-        "city": "Aurangabad",
-        "sector": "Mechanical",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 3,
-        "salary_min": 650000,
-        "salary_max": 1150000,
-        "openings_count": 4,
-        "apply_url": "https://www.endurancegroup.com/careers",
-        "skills": ["SolidWorks", "AutoCAD", "Structural Analysis"],
-        "description": "<p><strong>Company Profile</strong></p><p>Endurance Technologies in Waluj MIDC, Aurangabad is India's leading two-wheeler transmission and suspension manufacturer. We are seeking a CAD Design Lead for high-pressure die-cast aluminum transmission housings.</p><h3>Responsibilities</h3><ul><li>Develop 3D parametric CAD models of motorcycle transmission casings in SolidWorks.</li><li>Run structural stress and mold thermal simulations to eliminate porosity defects.</li><li>Interface with tooling shops and CNC machining teams to achieve dimensional tolerances.</li></ul>"
-    },
-    {
-        "title": "Optical Network Telemetry & Hardware Systems Engineer",
-        "company_name": "Sterlite Technologies (STL)",
-        "city": "Aurangabad",
-        "sector": "Electronics",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 700000,
-        "salary_max": 1200000,
-        "openings_count": 3,
-        "apply_url": "https://www.stl.tech/careers",
-        "skills": ["Circuit Design", "Sensor Fusion", "Python"],
-        "description": "<p><strong>About STL</strong></p><p>Sterlite Technologies' Optical Fiber CoE in Shendra MIDC, Aurangabad produces critical digital network infrastructure worldwide. We are hiring a Hardware Systems Engineer for high-speed photonics test rigs.</p><h3>Key Duties</h3><ul><li>Design analog and digital circuit boards for high-precision optical attenuation testing.</li><li>Implement Python automated test scripts for real-time laser wavelength monitoring.</li><li>Calibrate high-frequency sensor fusion instruments for quality assurance.</li></ul>"
-    },
-    {
-        "title": "CNC Multi-Axis Precision Tooling Supervisor",
-        "company_name": "Menon Bearings",
-        "city": "Kolhapur",
-        "sector": "Mechanical",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 3,
-        "salary_min": 550000,
-        "salary_max": 950000,
-        "openings_count": 4,
-        "apply_url": "https://www.menonbearings.com/careers",
-        "skills": ["AutoCAD", "SolidWorks"],
-        "description": "<p><strong>Job Role</strong></p><p>Menon Bearings in Shiroli MIDC, Kolhapur is hiring a Precision Tooling Supervisor for our multi-axis CNC machine shop producing critical engine bi-metal bushings and bearings.</p><h3>Responsibilities</h3><ul><li>Program 4-axis and 5-axis CNC machining centers and optimize G-code sequences.</li><li>Verify precision tolerances down to 5 microns using coordinate measuring machines (CMM).</li><li>Supervise machine operators and train apprentices on CAD blueprints and setup safety.</li></ul>"
-    },
-    {
-        "title": "Industrial Boiler Automation & Sensor Fusion Engineer",
-        "company_name": "Thermax Limited",
-        "city": "Pune",
-        "sector": "Mechanical & Energy",
-        "job_type": "Full-Time",
-        "proficiency_required": "INTERMEDIATE",
-        "experience_years": 2,
-        "salary_min": 750000,
-        "salary_max": 1300000,
-        "openings_count": 3,
-        "apply_url": "https://www.thermaxglobal.com/careers",
-        "skills": ["Sensor Fusion", "PLC Programming", "Thermodynamics"],
-        "description": "<p><strong>About Thermax</strong></p><p>Thermax Limited in Chinchwad, Pune provides clean energy and environmental solutions. We are seeking an Automation Engineer to deploy computerized burner management and thermal sensor telemetry.</p><h3>Duties</h3><ul><li>Design burner management control sequences and safety interlock logic.</li><li>Integrate temperature, oxygen, and pressure sensor telemetry with PLC automation loops.</li><li>Commission clean-tech thermal equipment at industrial customer sites across Maharashtra.</li></ul>"
-    }
-]
+# ─────────────────────────────────────────────────────────────────────────────
+#  Internal helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
-
-def _clean_html_description(raw_text: str) -> str:
-    """Cleans up raw HTML descriptions, unescapes entities, and ensures proper formatting."""
-    if not raw_text:
+def _clean_html(raw: str) -> str:
+    if not raw:
         return ""
-    text = html.unescape(raw_text)
-    text = re.sub(r'<script[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'<iframe[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>', '', text, flags=re.IGNORECASE)
+    text = html.unescape(raw)
+    text = re.sub(r"<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>", "", text, flags=re.IGNORECASE)
     return text.strip()
 
 
-def _extract_skills_from_text(text: str, db_skills: dict) -> list:
-    text_lower = text.lower()
-    matched = []
-    for keyword, skill_name in SKILL_KEYWORD_MAP.items():
-        if keyword in text_lower and skill_name in db_skills:
-            if skill_name not in matched:
-                matched.append(skill_name)
-    return matched[:6]
+def _extract_skills(text: str, db_skills: Dict[str, "Skill"]) -> List[str]:
+    lower = text.lower()
+    seen, matched = set(), []
+    for kw, name in SKILL_KEYWORD_MAP.items():
+        if kw in lower and name in db_skills and name not in seen:
+            seen.add(name)
+            matched.append(name)
+    return matched[:8]
 
 
-def _get_or_create_ingestion_employer(db: Session) -> int:
+def _infer_sector(title: str, desc: str = "") -> str:
+    combined = (title + " " + desc).lower()
+    for sector, kws in SECTOR_KEYWORDS.items():
+        if any(kw in combined for kw in kws):
+            return sector
+    return "General"
+
+
+def _extract_mh_city(location_str: str) -> str:
+    loc = (location_str or "").lower()
+    for city_key, city_obj in MH_CITY_MAP.items():
+        if city_key in loc:
+            return city_obj["city"]
+    return "Maharashtra"
+
+
+def _city_geo(city_name: str, fallback_index: int = 0) -> Dict:
+    return MH_CITY_MAP.get((city_name or "").lower(), MH_CITIES[fallback_index % len(MH_CITIES)])
+
+
+def _parse_salary_str(s: str):
+    if not s:
+        return None, None
+    nums = re.findall(r"[\d,]+", s.replace("₹", "").replace("$", "").replace("Rs", ""))
+    vals = []
+    for n in nums:
+        try:
+            v = int(n.replace(",", ""))
+            if v < 1000:
+                v *= 100000
+            vals.append(v)
+        except ValueError:
+            pass
+    if len(vals) >= 2:
+        return min(vals), max(vals)
+    if len(vals) == 1:
+        return vals[0], None
+    return None, None
+
+
+def _get_employer_id(db: Session) -> int:
     emp = db.query(Employer).filter(Employer.company_name == "Skill Nexus Live Feed").first()
     if emp:
         return emp.id
-    user_email = "livefeed@skillnexus.internal"
-    u = db.query(User).filter(User.email == user_email).first()
+    email = "livefeed@skillnexus.internal"
+    u = db.query(User).filter(User.email == email).first()
     if not u:
-        u = User(email=user_email, password_hash=hash_password("SysInternal@999"), role="EMPLOYER")
-        db.add(u)
-        db.commit()
-        db.refresh(u)
+        u = User(email=email, password_hash=hash_password("SysInternal@999"), role="EMPLOYER")
+        db.add(u); db.commit(); db.refresh(u)
     emp = Employer(
-        user_id=u.id,
-        company_name="Skill Nexus Live Feed",
-        industry="Multiple",
-        sector="Cross-Sector",
-        city="Pune",
-        state="Maharashtra",
-        description="Auto-ingested live job postings from public APIs",
+        user_id=u.id, company_name="Skill Nexus Live Feed",
+        industry="Multiple", sector="Cross-Sector",
+        city="Pune", state="Maharashtra",
+        description="Auto-ingested live job postings from public APIs and government portals",
     )
-    db.add(emp)
-    db.commit()
-    db.refresh(emp)
+    db.add(emp); db.commit(); db.refresh(emp)
     return emp.id
 
 
-def _city_cycle(index: int) -> dict:
-    return MH_CITIES[index % len(MH_CITIES)]
+def _upsert_job(
+    db: Session, employer_id: int, source: str, source_id: str,
+    title: str, company: str, description: str,
+    city: str, state: str, lat: float, lng: float,
+    sector: str, job_type: str, exp_years: int,
+    salary_min, salary_max, apply_url: str, openings_count: int,
+    db_skills: Dict, matched_skills: List[str], sync_ts: datetime,
+) -> bool:
+    title   = (title   or "")[:200]
+    company = (company or "")[:200]
 
-
-def sync_maharashtra_industry_jobs(db: Session, db_skills: dict) -> int:
-    """Seeds verified Maharashtra technical and engineering jobs from major regional employers."""
-    count = 0
-    employer_id = _get_or_create_ingestion_employer(db)
-    now = datetime.utcnow()
-    for idx, job_data in enumerate(MAHARASHTRA_INDUSTRY_ROLES):
-        source_id = f"mh-ind-{idx + 1}"
-        existing = db.query(Job).filter(
-            ((Job.source == "maharashtra_industry") & (Job.source_job_id == source_id)) |
-            ((Job.title == job_data["title"]) & (Job.company_name == job_data["company_name"]))
-        ).first()
-        if existing:
-            # Update fields and refresh freshness
-            existing.description = _clean_html_description(job_data["description"])
-            existing.apply_url = job_data["apply_url"]
-            existing.salary_min = job_data["salary_min"]
-            existing.salary_max = job_data["salary_max"]
-            existing.openings_count = job_data["openings_count"]
-            existing.source = "maharashtra_industry"
-            existing.source_job_id = source_id
-            existing.last_seen_at = now
-            existing.is_active = True
-            db.commit()
-            continue
-
-        city_matches = [c for c in MH_CITIES if c["city"].lower() == job_data["city"].lower()]
-        coords = city_matches[0] if city_matches else MH_CITIES[0]
-
-        new_job = Job(
-            employer_id=employer_id,
-            company_name=job_data["company_name"],
-            apply_url=job_data["apply_url"],
-            source="maharashtra_industry",
-            source_job_id=source_id,
-            fetched_at=now,
-            last_seen_at=now,
-            title=job_data["title"],
-            description=_clean_html_description(job_data["description"]),
-            sector=job_data["sector"],
-            job_type=job_data["job_type"],
-            proficiency_required=job_data["proficiency_required"],
-            experience_years=job_data["experience_years"],
-            salary_min=job_data["salary_min"],
-            salary_max=job_data["salary_max"],
-            openings_count=job_data["openings_count"],
-            city=job_data["city"],
-            state="Maharashtra",
-            latitude=coords["lat"],
-            longitude=coords["lng"],
-            is_active=True,
+    existing = db.query(Job).filter(
+        or_(
+            and_(Job.source == source, Job.source_job_id == source_id),
+            and_(Job.title == title, Job.company_name == company, Job.source.in_(MANAGED_SOURCES)),
         )
-        db.add(new_job)
+    ).first()
+
+    if existing:
+        existing.source        = source
+        existing.source_job_id = source_id
+        existing.last_seen_at  = sync_ts
+        existing.is_active     = True
+        if description:
+            existing.description = description
+        if apply_url:
+            existing.apply_url = apply_url
+        if salary_min is not None:
+            existing.salary_min = salary_min
+        if salary_max is not None:
+            existing.salary_max = salary_max
         db.commit()
-        db.refresh(new_job)
+        return False
 
-        for skill_name in job_data.get("skills", []):
-            skill = db_skills.get(skill_name)
-            if skill:
-                db.add(JobSkill(job_id=new_job.id, skill_id=skill.id, is_required=True))
-        db.commit()
-        count += 1
-    return count
+    new_job = Job(
+        employer_id=employer_id, company_name=company or "Unknown Company",
+        apply_url=apply_url or "", source=source, source_job_id=source_id,
+        fetched_at=sync_ts, last_seen_at=sync_ts,
+        title=title, description=description or "",
+        sector=sector or "General", job_type=job_type or "Full-Time",
+        proficiency_required="INTERMEDIATE", experience_years=exp_years or 1,
+        salary_min=salary_min, salary_max=salary_max,
+        openings_count=openings_count or 1,
+        city=city, state=state or "Maharashtra",
+        latitude=lat, longitude=lng, is_active=True,
+    )
+    db.add(new_job); db.commit(); db.refresh(new_job)
 
-
-def fetch_remotive_jobs(db: Session, db_skills: dict) -> int:
-    """Fetches remote software engineering jobs open to candidates in India and Worldwide."""
-    count = 0
-    try:
-        r = requests.get(
-            "https://remotive.com/api/remote-jobs",
-            params={"limit": 50, "category": "software-dev"},
-            headers={"User-Agent": "SkillNexus-India/1.0"},
-            timeout=15
-        )
-        if r.status_code != 200:
-            return 0
-        jobs = r.json().get("jobs", [])
-        employer_id = _get_or_create_ingestion_employer(db)
-        
-        now = datetime.utcnow()
-        # Filter strictly for India, APAC, Worldwide, or Anywhere
-        for i, j in enumerate(jobs):
-            location_req = (j.get("candidate_required_location") or "").lower()
-            is_india_eligible = any(k in location_req for k in ["india", "worldwide", "anywhere", "apac", "all"])
-            if not is_india_eligible:
-                continue
-
-            title = j.get("title", "")
-            company = j.get("company_name", "")
-            desc = _clean_html_description(j.get("description", ""))
-            tags = " ".join(j.get("tags", []))
-            full_text = f"{title} {company} {desc} {tags}"
-            matched_skills = _extract_skills_from_text(full_text, db_skills)
-            if not matched_skills:
-                continue
-
-            raw_id = str(j.get("id") or "")
-            source_id = f"remotive-{raw_id}" if raw_id else f"remotive-{company[:30]}-{title[:30]}"
-
-            existing = db.query(Job).filter(
-                ((Job.source == "remotive") & (Job.source_job_id == source_id)) |
-                ((Job.title == title[:200]) & (Job.company_name == company[:200]))
+    for skill_name in matched_skills:
+        skill = db_skills.get(skill_name)
+        if skill:
+            exists = db.query(JobSkill).filter(
+                JobSkill.job_id == new_job.id, JobSkill.skill_id == skill.id
             ).first()
-            if existing:
-                existing.source = "remotive"
-                existing.source_job_id = source_id
-                existing.last_seen_at = now
-                existing.is_active = True
-                db.commit()
-                continue
+            if not exists:
+                db.add(JobSkill(job_id=new_job.id, skill_id=skill.id, is_required=True))
+    db.commit()
+    return True
 
-            city_info = _city_cycle(i)
-            new_job = Job(
-                employer_id=employer_id,
-                company_name=company[:200] if company else "Global Tech Employer",
-                apply_url=j.get("url"),
-                source="remotive",
-                source_job_id=source_id,
-                fetched_at=now,
-                last_seen_at=now,
-                title=title[:200],
-                description=desc,
-                sector="IT",
-                job_type="Full-Time (Remote)",
-                proficiency_required="INTERMEDIATE",
-                experience_years=2,
-                salary_min=800000,
-                salary_max=1800000,
-                openings_count=1,
-                city=city_info["city"],
-                state="Maharashtra",
-                latitude=city_info["lat"],
-                longitude=city_info["lng"],
-                is_active=True,
-            )
-            db.add(new_job)
-            db.commit()
-            db.refresh(new_job)
-            for skill_name in matched_skills:
-                skill = db_skills.get(skill_name)
-                if skill:
-                    db.add(JobSkill(job_id=new_job.id, skill_id=skill.id, is_required=True))
-            db.commit()
-            count += 1
-    except Exception as e:
-        print(f"[Remotive] Error: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SOURCE 1 — Adzuna India API
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_adzuna_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
+    if not ADZUNA_APP_ID or not ADZUNA_APP_KEY:
+        logger.info("[Adzuna] Skipped — ADZUNA_APP_ID / ADZUNA_APP_KEY not configured.")
+        return 0
+
+    employer_id = _get_employer_id(db)
+    count       = 0
+    cities      = ["Pune", "Mumbai", "Nagpur", "Nashik", "Aurangabad",
+                   "Thane", "Kolhapur", "Solapur", "Maharashtra"]
+
+    for city in cities:
+        for page in range(1, 4):   # 3 pages × 50 = 150 jobs per city
+            try:
+                r = requests.get(
+                    f"https://api.adzuna.com/v1/api/jobs/in/search/{page}",
+                    params={
+                        "app_id": ADZUNA_APP_ID,
+                        "app_key": ADZUNA_APP_KEY,
+                        "where": city,
+                        "results_per_page": 50,
+                        "content-type": "application/json",
+                        "max_days_old": 60,
+                    },
+                    headers={"User-Agent": "SkillNexus-India/2.0"},
+                    timeout=15,
+                )
+                if r.status_code == 401:
+                    logger.warning("[Adzuna] Invalid credentials — stopping.")
+                    return count
+                if r.status_code != 200:
+                    break
+
+                jobs = r.json().get("results", [])
+                if not jobs:
+                    break
+
+                for i, j in enumerate(jobs):
+                    title   = j.get("title", "")
+                    company = (j.get("company") or {}).get("display_name", "")
+                    desc    = _clean_html(j.get("description", ""))
+                    url     = j.get("redirect_url", "")
+                    raw_id  = str(j.get("id", f"{city}-{page}-{i}"))
+
+                    area     = (j.get("location") or {}).get("area", [])
+                    job_city = area[-1] if area else city
+                    geo      = _city_geo(job_city, i)
+
+                    s_min = j.get("salary_min")
+                    s_max = j.get("salary_max")
+                    sector  = _infer_sector(title, desc)
+                    matched = _extract_skills(f"{title} {company} {desc}", db_skills)
+
+                    if _upsert_job(
+                        db, employer_id, "adzuna", f"adzuna-{raw_id}",
+                        title, company, desc,
+                        geo["city"], "Maharashtra", geo["lat"], geo["lng"],
+                        sector, "Full-Time", 1,
+                        int(s_min) if s_min else None,
+                        int(s_max) if s_max else None,
+                        url, 1, db_skills, matched, sync_ts,
+                    ):
+                        count += 1
+
+                time.sleep(0.25)
+            except Exception as e:
+                logger.warning(f"[Adzuna] {city} p{page}: {e}")
+                break
+
     return count
 
 
-def fetch_jobicy_jobs(db: Session, db_skills: dict) -> int:
-    """Fetches live developer and engineering jobs from Jobicy open to India and APAC."""
-    count = 0
+# ─────────────────────────────────────────────────────────────────────────────
+#  SOURCE 2 — Jooble India API
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_jooble_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
+    if not JOOBLE_API_KEY:
+        logger.info("[Jooble] Skipped — JOOBLE_API_KEY not configured.")
+        return 0
+
+    employer_id = _get_employer_id(db)
+    count       = 0
+    queries     = [
+        "software engineer", "data analyst", "mechanical engineer",
+        "electrical engineer", "healthcare jobs", "civil engineer",
+        "python developer", "react developer", "automation engineer",
+        "marketing", "finance", "production engineer",
+    ]
+
+    for term in queries:
+        for page in range(1, 3):
+            try:
+                r = requests.post(
+                    f"https://jooble.org/api/{JOOBLE_API_KEY}",
+                    json={"keywords": term, "location": "Maharashtra, India", "page": page},
+                    headers={"Content-Type": "application/json", "User-Agent": "SkillNexus-India/2.0"},
+                    timeout=15,
+                )
+                if r.status_code == 403:
+                    logger.warning("[Jooble] Invalid API key — stopping.")
+                    return count
+                if r.status_code != 200:
+                    break
+
+                jobs = r.json().get("jobs", [])
+                if not jobs:
+                    break
+
+                for i, j in enumerate(jobs):
+                    title   = j.get("title", "")
+                    company = j.get("company", "")
+                    snippet = _clean_html(j.get("snippet", ""))
+                    url     = j.get("link", "")
+                    raw_id  = str(j.get("id", f"{hash(term+company+title) % 999999}"))
+
+                    job_city = _extract_mh_city(j.get("location", ""))
+                    geo      = _city_geo(job_city, i)
+                    s_min, s_max = _parse_salary_str(j.get("salary", ""))
+                    sector   = _infer_sector(title, snippet)
+                    matched  = _extract_skills(f"{title} {company} {snippet}", db_skills)
+
+                    if _upsert_job(
+                        db, employer_id, "jooble", f"jooble-{raw_id}",
+                        title, company, snippet,
+                        geo["city"], "Maharashtra", geo["lat"], geo["lng"],
+                        sector, j.get("type", "Full-Time"), 1,
+                        s_min, s_max, url, 1, db_skills, matched, sync_ts,
+                    ):
+                        count += 1
+
+                time.sleep(0.35)
+            except Exception as e:
+                logger.warning(f"[Jooble] '{term}' p{page}: {e}")
+                break
+
+    return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SOURCE 3 — Remotive API (no key)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_remotive_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
+    employer_id = _get_employer_id(db)
+    count       = 0
+    categories  = ["software-dev", "data", "devops-sysadmin", "product", "design"]
+
+    for cat in categories:
+        try:
+            r = requests.get(
+                "https://remotive.com/api/remote-jobs",
+                params={"limit": 40, "category": cat},
+                headers={"User-Agent": "SkillNexus-India/2.0"},
+                timeout=15,
+            )
+            if r.status_code != 200:
+                continue
+
+            for i, j in enumerate(r.json().get("jobs", [])):
+                loc = (j.get("candidate_required_location") or "").lower()
+                if loc and not any(k in loc for k in ["india", "worldwide", "anywhere", "apac", "all"]):
+                    continue
+
+                title   = j.get("title", "")
+                company = j.get("company_name", "")
+                desc    = _clean_html(j.get("description", ""))
+                tags    = " ".join(j.get("tags", []))
+                url     = j.get("url", "")
+                raw_id  = str(j.get("id", ""))
+
+                matched = _extract_skills(f"{title} {company} {desc} {tags}", db_skills)
+                if not matched:
+                    continue
+
+                geo    = MH_CITIES[i % len(MH_CITIES)]
+                sector = _infer_sector(title, desc)
+
+                if _upsert_job(
+                    db, employer_id, "remotive", f"remotive-{raw_id}",
+                    title, company, desc,
+                    geo["city"], "Maharashtra", geo["lat"], geo["lng"],
+                    sector, "Full-Time (Remote)", 2,
+                    800000, 1800000, url, 1, db_skills, matched, sync_ts,
+                ):
+                    count += 1
+        except Exception as e:
+            logger.warning(f"[Remotive] {cat}: {e}")
+
+    return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SOURCE 4 — Jobicy API (no key)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_jobicy_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
+    employer_id = _get_employer_id(db)
+    count       = 0
     try:
         r = requests.get(
             "https://jobicy.com/api/v2/remote-jobs?count=50",
-            headers={"User-Agent": "SkillNexus-India/1.0"},
-            timeout=15
+            headers={"User-Agent": "SkillNexus-India/2.0"},
+            timeout=15,
         )
         if r.status_code != 200:
             return 0
-        jobs = r.json().get("jobs", [])
-        employer_id = _get_or_create_ingestion_employer(db)
-        now = datetime.utcnow()
 
-        for i, j in enumerate(jobs):
-            geo = (j.get("jobGeo") or "").lower()
-            # Only keep if open to India, APAC, or Worldwide/Anywhere
-            if not any(k in geo for k in ["anywhere", "worldwide", "apac", "india", "all"]):
+        for i, j in enumerate(r.json().get("jobs", [])):
+            geo_tag = (j.get("jobGeo") or "").lower()
+            if geo_tag and not any(k in geo_tag for k in ["anywhere", "worldwide", "apac", "india", "all"]):
                 continue
 
-            title = j.get("jobTitle", "")
+            title   = j.get("jobTitle", "")
             company = j.get("companyName", "")
-            desc = _clean_html_description(j.get("jobDescription", ""))
-            matched_skills = _extract_skills_from_text(f"{title} {company} {desc}", db_skills)
-            if not matched_skills:
+            desc    = _clean_html(j.get("jobDescription", ""))
+            url     = j.get("url", "")
+            raw_id  = str(j.get("id", ""))
+
+            matched = _extract_skills(f"{title} {company} {desc}", db_skills)
+            if not matched:
                 continue
 
-            raw_id = str(j.get("id") or "")
-            source_id = f"jobicy-{raw_id}" if raw_id else f"jobicy-{company[:30]}-{title[:30]}"
+            geo    = MH_CITIES[(i + 3) % len(MH_CITIES)]
+            sector = _infer_sector(title, desc)
 
-            existing = db.query(Job).filter(
-                ((Job.source == "jobicy") & (Job.source_job_id == source_id)) |
-                ((Job.title == title[:200]) & (Job.company_name == company[:200]))
-            ).first()
-            if existing:
-                existing.source = "jobicy"
-                existing.source_job_id = source_id
-                existing.last_seen_at = now
-                existing.is_active = True
-                db.commit()
-                continue
-
-            city_info = _city_cycle(i + 3)
-            new_job = Job(
-                employer_id=employer_id,
-                company_name=company[:200] if company else "Global Tech Employer",
-                apply_url=j.get("url"),
-                source="jobicy",
-                source_job_id=source_id,
-                fetched_at=now,
-                last_seen_at=now,
-                title=title[:200],
-                description=desc,
-                sector="IT",
-                job_type="Full-Time (Remote)",
-                proficiency_required="INTERMEDIATE",
-                experience_years=2,
-                salary_min=750000,
-                salary_max=1600000,
-                openings_count=1,
-                city=city_info["city"],
-                state="Maharashtra",
-                latitude=city_info["lat"],
-                longitude=city_info["lng"],
-                is_active=True,
-            )
-            db.add(new_job)
-            db.commit()
-            db.refresh(new_job)
-            for skill_name in matched_skills:
-                skill = db_skills.get(skill_name)
-                if skill:
-                    db.add(JobSkill(job_id=new_job.id, skill_id=skill.id, is_required=True))
-            db.commit()
-            count += 1
+            if _upsert_job(
+                db, employer_id, "jobicy", f"jobicy-{raw_id}",
+                title, company, desc,
+                geo["city"], "Maharashtra", geo["lat"], geo["lng"],
+                sector, "Full-Time (Remote)", 2,
+                750000, 1600000, url, 1, db_skills, matched, sync_ts,
+            ):
+                count += 1
     except Exception as e:
-        print(f"[Jobicy] Error: {e}")
+        logger.warning(f"[Jobicy] {e}")
+
     return count
 
 
-def fetch_github_skill_trends(db: Session) -> dict:
-    SKILL_TOPICS = {
-        "Python": "python",
-        "React": "react",
-        "Docker": "docker",
-        "AWS": "aws",
-        "Machine Learning": "machine-learning",
-        "SQL": "sql",
+# ─────────────────────────────────────────────────────────────────────────────
+#  SOURCE 5 — NCS India portal scraper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def scrape_ncs_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
+    if not BS4_AVAILABLE:
+        logger.info("[NCS] Skipped — beautifulsoup4 not installed.")
+        return 0
+
+    employer_id = _get_employer_id(db)
+    count       = 0
+    headers     = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "Referer": "https://www.ncs.gov.in/",
     }
-    since_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    search_terms = ["Maharashtra", "Pune", "Mumbai"]
+    for term in search_terms:
+        try:
+            r = requests.get(
+                "https://www.ncs.gov.in/NCSPages/VacancyList.aspx",
+                params={"State": "Maharashtra", "District": term if term != "Maharashtra" else ""},
+                headers=headers, timeout=20,
+            )
+            if r.status_code != 200:
+                continue
+
+            soup = BeautifulSoup(r.text, "lxml")
+            job_rows = (
+                soup.select("table#grdVacancyList tr:not(:first-child)") or
+                soup.select("tr.job-row") or
+                soup.select(".vacancy-item") or
+                []
+            )
+
+            for i, row in enumerate(job_rows[:30]):
+                cells = row.find_all("td")
+                if len(cells) < 2:
+                    continue
+                title   = cells[0].get_text(strip=True)
+                company = cells[1].get_text(strip=True) if len(cells) > 1 else "Government of Maharashtra"
+                city    = cells[2].get_text(strip=True) if len(cells) > 2 else term
+
+                if not title or len(title) < 5:
+                    continue
+
+                link_tag = row.find("a", href=True)
+                url = (f"https://www.ncs.gov.in{link_tag['href']}" if link_tag else "https://www.ncs.gov.in")
+
+                geo     = _city_geo(city, i)
+                matched = _extract_skills(title, db_skills)
+                sector  = _infer_sector(title)
+
+                if _upsert_job(
+                    db, employer_id, "ncs", f"ncs-{hash(title + company) % 999999}",
+                    title, company, f"Posted on National Career Service portal. Location: {city}, Maharashtra.",
+                    geo["city"], "Maharashtra", geo["lat"], geo["lng"],
+                    sector, "Full-Time", 1, None, None, url, 1, db_skills, matched, sync_ts,
+                ):
+                    count += 1
+        except Exception as e:
+            logger.info(f"[NCS] {term}: {e}")
+
+    return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SOURCE 6 — Mahaswayam scraper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def scrape_mahaswayam_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
+    if not BS4_AVAILABLE:
+        logger.info("[Mahaswayam] Skipped — beautifulsoup4 not installed.")
+        return 0
+
+    employer_id = _get_employer_id(db)
+    count       = 0
+    headers     = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language": "en-IN,en;q=0.9",
+    }
+
+    urls = [
+        "https://rojgar.mahasaym.gov.in/MarketplaceJobList",
+        "https://rojgar.mahasaym.gov.in/JobList",
+    ]
+
+    for endpoint in urls:
+        try:
+            r = requests.get(endpoint, headers=headers, timeout=20, allow_redirects=True)
+            if r.status_code != 200:
+                continue
+
+            soup = BeautifulSoup(r.text, "lxml")
+            job_cards = (
+                soup.select(".job-card") or
+                soup.select("table.table tbody tr") or
+                soup.select("tr.ng-star-inserted") or
+                []
+            )
+
+            for i, card in enumerate(job_cards[:30]):
+                title_el   = card.select_one(".job-title, h3, h4, td:nth-child(1)")
+                company_el = card.select_one(".company, .employer, td:nth-child(2)")
+                city_el    = card.select_one(".location, .city, td:nth-child(3)")
+
+                title   = title_el.get_text(strip=True)   if title_el   else ""
+                company = company_el.get_text(strip=True) if company_el else "Maharashtra Employer"
+                city    = city_el.get_text(strip=True)    if city_el    else "Maharashtra"
+
+                if not title or len(title) < 5:
+                    continue
+
+                link_tag = card.find("a", href=True)
+                job_url  = link_tag["href"] if link_tag else endpoint
+                if job_url.startswith("/"):
+                    job_url = f"https://rojgar.mahasaym.gov.in{job_url}"
+
+                geo     = _city_geo(city, i)
+                matched = _extract_skills(title, db_skills)
+                sector  = _infer_sector(title)
+
+                if _upsert_job(
+                    db, employer_id, "mahaswayam", f"maha-{hash(title + company) % 999999}",
+                    title, company,
+                    f"Posted on Mahaswayam — Maharashtra government employment portal. Location: {city}.",
+                    geo["city"], "Maharashtra", geo["lat"], geo["lng"],
+                    sector, "Full-Time", 1, None, None, job_url, 1, db_skills, matched, sync_ts,
+                ):
+                    count += 1
+
+            if count > 0:
+                break
+        except Exception as e:
+            logger.info(f"[Mahaswayam] {endpoint}: {e}")
+
+    return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  GitHub skill trend intelligence
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SKILL_TOPICS = {
+    "Python": "python", "React": "react", "Docker": "docker",
+    "AWS": "aws", "Machine Learning": "machine-learning",
+    "SQL": "sql", "Java": "java", "Figma": "figma",
+}
+
+def fetch_github_skill_trends(db: Session) -> Dict:
+    since   = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
     results = {}
-    for skill_name, topic in SKILL_TOPICS.items():
+    for skill_name, topic in _SKILL_TOPICS.items():
         try:
             r = requests.get(
                 "https://api.github.com/search/repositories",
-                params={"q": f"topic:{topic} created:>{since_date}", "sort": "updated", "per_page": 1},
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "SkillNexus-Telemetry/1.0"
-                },
-                timeout=3
+                params={"q": f"topic:{topic} created:>{since}", "sort": "updated", "per_page": 1},
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "SkillNexus/2.0"},
+                timeout=5,
             )
             if r.status_code == 200:
                 total = r.json().get("total_count", 0)
@@ -621,15 +708,16 @@ def fetch_github_skill_trends(db: Session) -> dict:
                 skill = db.query(Skill).filter(Skill.name == skill_name).first()
                 if skill:
                     if total > 5000:
-                        skill.trend = "HOT"
+                        skill.trend        = "HOT"
                         skill.demand_score = min((skill.demand_score or 80.0) + 1.5, 99.0)
                     elif total > 1000:
                         skill.trend = "RISING"
                     elif total < 100:
-                        skill.trend = "DECLINING"
+                        skill.trend        = "DECLINING"
                         skill.demand_score = max((skill.demand_score or 50.0) - 2.0, 10.0)
                     else:
                         skill.trend = "STABLE"
+            time.sleep(0.2)
         except Exception:
             continue
     try:
@@ -639,143 +727,169 @@ def fetch_github_skill_trends(db: Session) -> dict:
     return results
 
 
-def sync_maharashtra_districts(db: Session) -> int:
+# ─────────────────────────────────────────────────────────────────────────────
+#  Dynamic district intelligence — derived entirely from live job data
+# ─────────────────────────────────────────────────────────────────────────────
+
+def sync_district_intelligence_from_jobs(db: Session) -> int:
+    active_jobs = db.query(Job).filter(
+        Job.is_active == True, Job.state == "Maharashtra"
+    ).all()
+    if not active_jobs:
+        return 0
+
+    city_jobs: Dict[str, List[Job]] = {}
+    for j in active_jobs:
+        city = (j.city or "").strip()
+        if city:
+            city_jobs.setdefault(city, []).append(j)
+
+    total_active = len(active_jobs)
     count = 0
-    for d in MH_DISTRICT_DATA:
+
+    for city, jobs in city_jobs.items():
+        if len(jobs) < 2:
+            continue
+
+        sectors    = [j.sector for j in jobs if j.sector]
+        job_ids    = [j.id     for j in jobs]
+        total_op   = sum(j.openings_count or 1 for j in jobs)
+
+        primary_sector = Counter(sectors).most_common(1)[0][0] if sectors else "General"
+        demand_index   = round(min(len(jobs) / max(total_active, 1) * 100 * 5, 99.0), 1)
+
+        if demand_index >= 80:
+            status = "CRITICAL_SHORTAGE"
+        elif demand_index >= 55:
+            status = "HIGH_DEMAND"
+        else:
+            status = "MODERATE"
+
+        top_skill_row = (
+            db.query(Skill.name, func.count(JobSkill.id).label("cnt"))
+            .join(JobSkill, JobSkill.skill_id == Skill.id)
+            .filter(JobSkill.job_id.in_(job_ids))
+            .group_by(Skill.name)
+            .order_by(func.count(JobSkill.id).desc())
+            .first()
+        )
+        top_skill          = top_skill_row[0] if top_skill_row else "General Skills"
+        shortage_deficit   = int(total_op * 0.30)
+        recommended_seats  = int(total_op * 1.25)
+        recommended_action = f"Scale training capacity in {primary_sector} sector"
+
         existing = db.query(DistrictIntelligence).filter(
-            DistrictIntelligence.district == d["district"],
-            DistrictIntelligence.state == "Maharashtra"
+            DistrictIntelligence.district == city,
+            DistrictIntelligence.state == "Maharashtra",
         ).first()
+
         if existing:
-            existing.demand_index = d["demand_index"]
-            existing.current_capacity = d["current_capacity"]
-            existing.shortage_deficit = d["shortage_deficit"]
-            existing.status = d["status"]
-            existing.top_demand_skill = d["top_demand_skill"]
-            existing.recommended_seats = d["recommended_seats"]
-            existing.recommended_action = d["recommended_action"]
-            existing.primary_sector = d["primary_sector"]
+            existing.primary_sector     = primary_sector
+            existing.demand_index       = demand_index
+            existing.current_capacity   = total_op
+            existing.shortage_deficit   = shortage_deficit
+            existing.status             = status
+            existing.top_demand_skill   = top_skill
+            existing.recommended_seats  = recommended_seats
+            existing.recommended_action = recommended_action
         else:
             db.add(DistrictIntelligence(
-                state="Maharashtra",
-                district=d["district"],
-                primary_sector=d["primary_sector"],
-                demand_index=d["demand_index"],
-                current_capacity=d["current_capacity"],
-                shortage_deficit=d["shortage_deficit"],
-                status=d["status"],
-                top_demand_skill=d["top_demand_skill"],
-                recommended_seats=d["recommended_seats"],
-                recommended_action=d["recommended_action"],
+                state="Maharashtra", district=city,
+                primary_sector=primary_sector, demand_index=demand_index,
+                current_capacity=total_op, shortage_deficit=shortage_deficit,
+                status=status, top_demand_skill=top_skill,
+                recommended_seats=recommended_seats, recommended_action=recommended_action,
             ))
             count += 1
+
     db.commit()
     return count
 
 
-BASELINE_SKILLS = [
-    {"name": "Python", "domain": "IT", "desc": "Backend programming, APIs and automation", "salary": 1200000, "score": 92.0},
-    {"name": "React", "domain": "IT", "desc": "Modern component-based frontend web framework", "salary": 1000000, "score": 90.0},
-    {"name": "Docker", "domain": "IT", "desc": "Containerization and cloud microservices packaging", "salary": 1300000, "score": 88.0},
-    {"name": "AWS", "domain": "IT", "desc": "Cloud computing infrastructure & deployment pipelines", "salary": 1400000, "score": 93.0},
-    {"name": "Java", "domain": "IT", "desc": "Enterprise backend, microservices & distributed computing", "salary": 1100000, "score": 86.0},
-    {"name": "Machine Learning", "domain": "Data Science", "desc": "Predictive modeling, neural networks & scikit-learn", "salary": 1600000, "score": 96.0},
-    {"name": "SQL", "domain": "Data Science", "desc": "Relational query optimization and data analytics", "salary": 1050000, "score": 91.0},
-    {"name": "Data Visualization", "domain": "Data Science", "desc": "Executive dashboarding and telemetry visualization", "salary": 1100000, "score": 84.0},
-    {"name": "AutoCAD", "domain": "Mechanical", "desc": "Computer-aided engineering drafting and modeling", "salary": 600000, "score": 72.0},
-    {"name": "SolidWorks", "domain": "Mechanical", "desc": "3D parametric CAD modeling and mechanical assemblies", "salary": 750000, "score": 85.0},
-    {"name": "Battery Management", "domain": "Mechanical", "desc": "Electric vehicle lithium-ion pack BMS architecture & thermal safety", "salary": 1350000, "score": 95.0},
-    {"name": "CAN Bus", "domain": "Mechanical", "desc": "Automotive controller area network communications protocol", "salary": 950000, "score": 91.0},
-    {"name": "PLC Programming", "domain": "Electrical", "desc": "Industrial programmable logic controllers and SCADA systems", "salary": 850000, "score": 89.0},
-    {"name": "Circuit Design", "domain": "Electrical", "desc": "Analog and digital printed circuit board (PCB) design", "salary": 720000, "score": 82.0},
-    {"name": "Power Systems", "domain": "Electrical", "desc": "Grid electrical power distribution and renewable energy interconnections", "salary": 780000, "score": 80.0},
-    {"name": "Clinical Nursing", "domain": "Healthcare", "desc": "Inpatient care and emergency clinical protocols", "salary": 520000, "score": 89.0},
-    {"name": "Patient Care", "domain": "Healthcare", "desc": "Hospital patient vital monitoring and clinical diagnostics", "salary": 480000, "score": 92.0},
-    {"name": "Figma", "domain": "Design", "desc": "UI/UX interface prototyping and design system systems", "salary": 950000, "score": 87.0},
-    {"name": "SEO", "domain": "Marketing", "desc": "Search engine visibility and organic acquisition growth", "salary": 650000, "score": 80.0},
-]
+# ─────────────────────────────────────────────────────────────────────────────
+#  Expiry logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _mark_stale_jobs_inactive(db: Session, sync_ts: datetime) -> int:
+    """Mark managed jobs not refreshed in this sync run as inactive (expired)."""
+    cutoff = sync_ts - timedelta(seconds=90)
+    stale  = db.query(Job).filter(
+        Job.is_active == True,
+        Job.source.in_(MANAGED_SOURCES),
+        Job.last_seen_at < cutoff,
+    ).all()
+    for j in stale:
+        j.is_active = False
+    db.commit()
+    return len(stale)
 
 
-def ensure_baseline_skills(db: Session) -> dict:
-    """Ensure core skills exist in DB so job matching and trends have nodes to attach to."""
+# ─────────────────────────────────────────────────────────────────────────────
+#  Baseline skill seeding
+# ─────────────────────────────────────────────────────────────────────────────
+
+def ensure_baseline_skills(db: Session) -> Dict[str, Skill]:
     existing = {s.name: s for s in db.query(Skill).all()}
-    created = False
+    created  = False
     for sk in BASELINE_SKILLS:
         if sk["name"] not in existing:
-            new_s = Skill(
-                name=sk["name"],
-                domain=sk["domain"],
-                description=sk["desc"],
-                demand_score=sk["score"],
-                median_salary=sk["salary"],
-                total_openings=0,
-                trend="RISING"
-            )
-            db.add(new_s)
+            db.add(Skill(
+                name=sk["name"], domain=sk["domain"], description=sk["desc"],
+                demand_score=sk["score"], median_salary=sk["salary"],
+                total_openings=0, trend="RISING",
+            ))
             created = True
     if created:
         db.commit()
     return {s.name: s for s in db.query(Skill).all()}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  System setting helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_last_sync_time(db: Session) -> Optional[datetime]:
-    """Retrieve timestamp of last successful telemetry sync."""
-    setting = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()
-    if setting and setting.value:
+    s = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()
+    if s and s.value:
         try:
-            return datetime.fromisoformat(setting.value)
+            return datetime.fromisoformat(s.value)
         except Exception:
             return None
     return None
 
 
 def should_auto_sync(db: Session, max_stale_hours: int = 12) -> bool:
-    """Check if telemetry data has been initialized and is older than max_stale_hours."""
-    last_sync = get_last_sync_time(db)
-    if not last_sync:
+    last = get_last_sync_time(db)
+    if not last:
         return False
-    return (datetime.utcnow() - last_sync) > timedelta(hours=max_stale_hours)
+    return (datetime.utcnow() - last) > timedelta(hours=max_stale_hours)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Master orchestrator
+# ─────────────────────────────────────────────────────────────────────────────
 
 def sync_all_telemetry(db: Session) -> dict:
-    """Master orchestrator: runs all multi-source India and Maharashtra ingestion layers."""
+    sync_ts    = datetime.utcnow()
     all_skills = ensure_baseline_skills(db)
-    results = {}
-    
-    # 1. Real Maharashtra Industry Hiring Openings
-    results["jobs_from_maharashtra_industry"] = sync_maharashtra_industry_jobs(db, all_skills)
-    
-    # 2. Remotive (India/Worldwide Filtered)
-    results["jobs_from_remotive_india"] = fetch_remotive_jobs(db, all_skills)
-    
-    # 3. Jobicy (India/APAC Filtered)
-    results["jobs_from_jobicy_india"] = fetch_jobicy_jobs(db, all_skills)
-    
-    results["total_new_jobs"] = (
-        results["jobs_from_maharashtra_industry"] +
-        results["jobs_from_remotive_india"] +
-        results["jobs_from_jobicy_india"]
+    results    = {"sync_started_at": sync_ts.isoformat()}
+
+    results["jobs_from_adzuna"]     = fetch_adzuna_jobs(db, all_skills, sync_ts)
+    results["jobs_from_jooble"]     = fetch_jooble_jobs(db, all_skills, sync_ts)
+    results["jobs_from_remotive"]   = fetch_remotive_jobs(db, all_skills, sync_ts)
+    results["jobs_from_jobicy"]     = fetch_jobicy_jobs(db, all_skills, sync_ts)
+    results["jobs_from_ncs"]        = scrape_ncs_jobs(db, all_skills, sync_ts)
+    results["jobs_from_mahaswayam"] = scrape_mahaswayam_jobs(db, all_skills, sync_ts)
+
+    results["total_new_jobs"] = sum(
+        v for k, v in results.items() if k.startswith("jobs_from_")
     )
-    
-    # 4. GitHub Real-time Skill Trends
-    trend_data = fetch_github_skill_trends(db)
-    results["skill_trends_updated"] = len(trend_data)
-    
-    # 5. Maharashtra MSDE District Intelligence
-    results["new_districts_added"] = sync_maharashtra_districts(db)
-    results["districts_synced"] = len(MH_DISTRICT_DATA)
-    
-    now_iso = datetime.utcnow().isoformat()
-    results["synced_at"] = now_iso + "Z"
 
-    # 6. Deactivate stale jobs not seen in 30 days
-    try:
-        stale_cutoff = datetime.utcnow() - timedelta(days=30)
-        db.query(Job).filter(Job.last_seen_at != None, Job.last_seen_at < stale_cutoff, Job.is_active == True).update({"is_active": False}, synchronize_session=False)
-    except Exception as e:
-        print(f"[Telemetry] Stale cleanup note: {e}")
+    results["jobs_expired"]         = _mark_stale_jobs_inactive(db, sync_ts)
+    results["skill_trends_updated"] = len(fetch_github_skill_trends(db))
+    results["districts_synced"]     = sync_district_intelligence_from_jobs(db)
 
-    # Persist last sync time in system_settings
+    now_iso = sync_ts.isoformat()
     setting = db.query(SystemSetting).filter(SystemSetting.key == "last_telemetry_sync").first()
     if setting:
         setting.value = now_iso
@@ -784,3 +898,4 @@ def sync_all_telemetry(db: Session) -> dict:
     db.commit()
 
     return results
+

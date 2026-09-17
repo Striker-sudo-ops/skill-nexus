@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
+    # External Job & Government Telemetry API Keys
+    ADZUNA_APP_ID: str = os.getenv("ADZUNA_APP_ID", "")
+    ADZUNA_APP_KEY: str = os.getenv("ADZUNA_APP_KEY", "")
+    JOOBLE_API_KEY: str = os.getenv("JOOBLE_API_KEY", "")
+    DATA_GOV_API_KEY: str = os.getenv("DATA_GOV_API_KEY", "")
+
     # Dual database support: defaults to absolute SQLite path, easily overrides with PostgreSQL
     DATABASE_URL: str = os.getenv("DATABASE_URL", DEFAULT_DB)
     

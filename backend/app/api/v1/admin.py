@@ -418,3 +418,39 @@ def get_last_sync(db: Session = Depends(get_db)):
         }
     except Exception:
         return {"last_sync": None, "hours_ago": None, "never_synced": True}
+
+
+# ─── Source & Freshness Statistics ───────────────────────────────────────────
+@router.get('/source-stats')
+def get_source_stats(db: Session = Depends(get_db)):
+    """Returns job counts breakdown by ingestion source and active/expired status."""
+    sources = db.query(
+        Job.source,
+        func.count(Job.id).label("total"),
+        func.sum(func.case((Job.is_active == True, 1), else_=0)).label("active"),
+        func.sum(func.case((Job.is_active == False, 1), else_=0)).label("expired")
+    ).group_by(Job.source).all()
+
+    breakdown = []
+    total_active = 0
+    total_expired = 0
+    for s in sources:
+        src_name = s.source or "manual"
+        act = int(s.active or 0)
+        exp = int(s.expired or 0)
+        total_active += act
+        total_expired += exp
+        breakdown.append({
+            "source": src_name,
+            "total": int(s.total or 0),
+            "active": act,
+            "expired": exp
+        })
+
+    return {
+        "sources": breakdown,
+        "total_active": total_active,
+        "total_expired": total_expired,
+        "total_jobs": total_active + total_expired,
+    }
+

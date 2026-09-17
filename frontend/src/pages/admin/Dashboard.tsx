@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getAdminOverview, exportReport, syncLiveTelemetry, wipeTelemetry, getLastSync } from '../../services/api';
+import { getAdminOverview, exportReport, syncLiveTelemetry, wipeTelemetry, getLastSync, getSourceStats } from '../../services/api';
 import { Card, Spinner } from '../../components/ui';
 import { 
   Users, BookOpen, School, Building2, TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle2,
   Download, ShieldCheck, MapPin, ChevronRight, Activity, Award,
-  Sparkles, Layers, RefreshCw, Trash2
+  Sparkles, Layers, RefreshCw, Trash2, Globe
 } from 'lucide-react';
 
 export default function AdminDashboard({ navigate }: { navigate: (page: string) => void }) {
@@ -16,6 +16,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
   const [wiping, setWiping] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [lastSyncInfo, setLastSyncInfo] = useState<any>(null);
+  const [sourceStats, setSourceStats] = useState<any>(null);
 
   useEffect(() => {
     getAdminOverview()
@@ -24,6 +25,9 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       .finally(() => setLoading(false));
     getLastSync()
       .then(res => setLastSyncInfo(res.data))
+      .catch(() => {});
+    getSourceStats()
+      .then(res => setSourceStats(res.data))
       .catch(() => {});
   }, []);
 
@@ -50,11 +54,23 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
     setSyncResult(null);
     try {
       const res = await syncLiveTelemetry();
-      const d = res.data;
-      setSyncResult(`${d.details?.total_new_jobs ?? 0} new jobs, ${d.details?.skill_trends_updated ?? 0} skills updated, ${d.details?.districts_synced ?? 0} districts refreshed`);
+      const d = res.data?.details || {};
+      const breakdown = [
+        d.jobs_from_adzuna ? `Adzuna: ${d.jobs_from_adzuna}` : null,
+        d.jobs_from_jooble ? `Jooble: ${d.jobs_from_jooble}` : null,
+        d.jobs_from_remotive ? `Remotive: ${d.jobs_from_remotive}` : null,
+        d.jobs_from_jobicy ? `Jobicy: ${d.jobs_from_jobicy}` : null,
+        d.jobs_from_ncs ? `NCS: ${d.jobs_from_ncs}` : null,
+        d.jobs_from_mahaswayam ? `Mahaswayam: ${d.jobs_from_mahaswayam}` : null,
+      ].filter(Boolean).join(' • ');
+
+      setSyncResult(
+        `Sync Successful: ${d.total_new_jobs ?? 0} jobs ingested (${breakdown || 'Live feeds'}) | Expired: ${d.jobs_expired ?? 0} | Skills: ${d.skill_trends_updated ?? 0} | Districts: ${d.districts_synced ?? 0}`
+      );
       const overviewRes = await getAdminOverview();
       setData(overviewRes.data);
       getLastSync().then(r => setLastSyncInfo(r.data)).catch(() => {});
+      getSourceStats().then(r => setSourceStats(r.data)).catch(() => {});
     } catch (err: any) {
       console.error('Live sync error:', err);
       const errDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Check backend connection';
@@ -76,6 +92,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       const overviewRes = await getAdminOverview();
       setData(overviewRes.data);
       getLastSync().then(r => setLastSyncInfo(r.data)).catch(() => {});
+      getSourceStats().then(r => setSourceStats(r.data)).catch(() => {});
     } catch (err: any) {
       console.error('Wipe error:', err);
       const errDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Check backend connection';
@@ -219,6 +236,45 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
         )}
       </div>
+
+      {/* ── Live Source Telemetry Status Bar ── */}
+      {sourceStats && (
+        <Card className="p-3.5 border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-xl shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Globe className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <span className="font-bold text-gray-900 dark:text-white">Active Ingested Feeds: </span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400">{sourceStats.total_active ?? 0} Live Jobs</span>
+                {sourceStats.total_expired > 0 && (
+                  <span className="text-gray-400 dark:text-gray-500 ml-1.5 font-normal">
+                    ({sourceStats.total_expired} expired & filtered)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {sourceStats.sources && sourceStats.sources.map((src: any) => (
+                <span
+                  key={src.source}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                    src.active > 0
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${src.active > 0 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                  <span className="capitalize">{src.source}</span>
+                  <span className="font-bold">({src.active})</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* ── 2. Compact High-Density Top 4 Metric KPI Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
