@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSkills, getSkillDomains } from '../../services/api';
+import { getSkills, getSkillDomains, getSalaryInsights } from '../../services/api';
 import { Input, Select, Spinner, Badge, Card } from '../../components/ui';
 import { TrendingUp, TrendingDown, Minus, Briefcase, BarChart2, DollarSign, BookOpen } from 'lucide-react';
 
@@ -21,6 +21,7 @@ function MiniBar({ value, max, color }: { value: number; max: number; color: str
 export default function TrendingSkills({ onNavigate }: { onNavigate: (page: string, params?: any) => void }) {
   const [skills, setSkills] = useState<any[]>([]);
   const [domains, setDomains] = useState<string[]>([]);
+  const [salaryInsights, setSalaryInsights] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [domainFilter, setDomainFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -29,6 +30,7 @@ export default function TrendingSkills({ onNavigate }: { onNavigate: (page: stri
   useEffect(() => {
     fetchData();
     getSkillDomains().then(res => setDomains(res.data)).catch(() => {});
+    getSalaryInsights().then(res => setSalaryInsights(res.data?.insights || [])).catch(() => {});
   }, [domainFilter, sort]);
 
   const fetchData = () => {
@@ -198,6 +200,26 @@ export default function TrendingSkills({ onNavigate }: { onNavigate: (page: stri
                     </div>
                     <MiniBar value={openings} max={maxOpenings} color="bg-blue-500" />
                   </div>
+
+                  {/* Live Salary from Ingested Jobs */}
+                  {(() => {
+                    const match = salaryInsights.find((si: any) =>
+                      si.sector && s.domain &&
+                      (si.sector.toLowerCase().includes(s.domain.toLowerCase()) ||
+                       s.domain.toLowerCase().includes(si.sector.toLowerCase()))
+                    ) || (salaryInsights.length > 0 ? salaryInsights[0] : null);
+                    if (!match || !match.avg_salary_lpa) return null;
+                    return (
+                      <div className="flex items-center justify-between text-xs bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg px-2.5 py-1.5 mt-1">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                          <DollarSign className="w-3 h-3" /> Live Job Salary
+                        </span>
+                        <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                          ₹{match.min_salary_lpa?.toFixed(1)}–{match.max_salary_lpa?.toFixed(1)} LPA
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Actions */}

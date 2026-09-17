@@ -1,25 +1,30 @@
 import { useState, useEffect } from 'react';
-import { getRecommendedJobs, getStudentProfile } from '../../services/api';
+import { getRecommendedJobs, getStudentProfile, getSavedJobIds, saveJob, unsaveJob } from '../../services/api';
 import { Card, Spinner } from '../../components/ui';
 import { 
   Sparkles, MapPin, Briefcase, IndianRupee, ArrowUpRight, 
-  CheckCircle2, AlertCircle, Compass, RefreshCw, UserCheck
+  CheckCircle2, AlertCircle, Compass, RefreshCw, UserCheck, Bookmark
 } from 'lucide-react';
 
 export default function RecommendedJobs({ onNavigate }: { onNavigate: (page: string, params?: any) => void }) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [profile, setProfile] = useState<any>(null);
+  const [savedIds, setSavedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
-      const [jobsRes, profRes] = await Promise.all([
+      const [jobsRes, profRes, savedRes] = await Promise.all([
         getRecommendedJobs().catch(() => ({ data: [] })),
         getStudentProfile().catch(() => ({ data: {} })),
+        getSavedJobIds().catch(() => ({ data: [] }))
       ]);
       setJobs(jobsRes.data || []);
       setProfile(profRes.data);
+      if (Array.isArray(savedRes?.data)) {
+        setSavedIds(savedRes.data);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -168,20 +173,43 @@ export default function RecommendedJobs({ onNavigate }: { onNavigate: (page: str
                       </p>
                     </div>
 
-                    {matchPct !== undefined && (
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 border ${
-                          matchPct >= 70
-                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                            : matchPct >= 40
-                            ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {matchPct !== undefined && (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                            matchPct >= 70
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                              : matchPct >= 40
+                              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                              : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          <Sparkles className="w-2.5 h-2.5" />
+                          {Math.round(matchPct)}% Match
+                        </span>
+                      )}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const isSaved = savedIds.includes(jobId);
+                          if (isSaved) {
+                            await unsaveJob(jobId).catch(() => {});
+                            setSavedIds(prev => prev.filter(id => id !== jobId));
+                          } else {
+                            await saveJob(jobId).catch(() => {});
+                            setSavedIds(prev => [...prev, jobId]);
+                          }
+                        }}
+                        title={savedIds.includes(jobId) ? 'Remove from saved' : 'Save job'}
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          savedIds.includes(jobId)
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50'
+                            : 'text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30'
                         }`}
                       >
-                        <Sparkles className="w-2.5 h-2.5" />
-                        {Math.round(matchPct)}% Match
-                      </span>
-                    )}
+                        <Bookmark className={`w-4 h-4 ${savedIds.includes(jobId) ? 'fill-current' : ''}`} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Metadata Chips: Location, Proximity, Job Type */}
