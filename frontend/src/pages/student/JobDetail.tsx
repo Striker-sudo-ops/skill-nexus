@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { getJobById, getSkillGap } from '../../services/api';
+import { getJobById, getSkillGap, getSavedJobIds, saveJob, unsaveJob } from '../../services/api';
 import { Button, Spinner, Badge, Card } from '../../components/ui';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
+import { CheckCircle2, XCircle, ExternalLink, Bookmark } from 'lucide-react';
 
 function renderFormattedDescription(desc: string) {
   if (!desc) return null;
@@ -39,13 +39,15 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
   const [job, setJob] = useState<any>(null);
   const [gap, setGap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
     Promise.all([
       getJobById(jobId.toString()),
-      isLoggedIn && isStudent ? getSkillGap(jobId.toString()).catch(()=>({data:null})) : Promise.resolve({data:null})
-    ]).then(([jobRes, gapRes]) => {
+      isLoggedIn && isStudent ? getSkillGap(jobId.toString()).catch(()=>({data:null})) : Promise.resolve({data:null}),
+      isLoggedIn ? getSavedJobIds().catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
+    ]).then(([jobRes, gapRes, savedRes]) => {
       // API returns { job: {...}, employer: {...}, company_name: "...", apply_url: "...", required_skills: [...], resources: [...] }
       const raw = jobRes.data;
       const jobObj = raw?.job || raw;
@@ -58,9 +60,30 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
         resources: raw?.resources || [],
       });
       if(gapRes.data) setGap(gapRes.data);
+      if (Array.isArray(savedRes?.data)) {
+        setIsSaved(savedRes.data.includes(Number(jobId)));
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [jobId, isLoggedIn, isStudent]);
+
+  const handleToggleSave = async () => {
+    if (!isLoggedIn) {
+      alert('Please log in to bookmark this position.');
+      return;
+    }
+    try {
+      if (isSaved) {
+        await unsaveJob(jobId);
+        setIsSaved(false);
+      } else {
+        await saveJob(jobId);
+        setIsSaved(true);
+      }
+    } catch (err) {
+      console.error('Error saving job:', err);
+    }
+  };
 
   if (loading) return <div className="flex justify-center p-12"><Spinner /></div>;
   if (!job) return <div className="p-12 text-center">Job not found</div>;
@@ -106,6 +129,20 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
             <span>{job.apply_url ? 'Apply on Company Website' : 'Apply Now'}</span>
             {job.apply_url && <ExternalLink className="w-4 h-4" />}
           </Button>
+
+          {isLoggedIn && (
+            <button
+              onClick={handleToggleSave}
+              className={`px-5 py-3 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors ${
+                isSaved
+                  ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850'
+              }`}
+            >
+              <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-current text-blue-600' : ''}`} />
+              <span>{isSaved ? 'Saved in My Jobs' : 'Save Position'}</span>
+            </button>
+          )}
 
           {job.apply_url && (
             <span className="text-xs text-gray-500">

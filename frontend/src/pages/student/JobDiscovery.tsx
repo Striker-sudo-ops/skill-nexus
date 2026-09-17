@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { getJobs, getJobCount } from '../../services/api';
+import { getJobs, getJobCount, getSavedJobIds, saveJob, unsaveJob } from '../../services/api';
 import { Button, Input, Select, Spinner, Card } from '../../components/ui';
 import { useAuth } from '../../hooks/useAuth';
-import { Search, MapPin, Briefcase, IndianRupee, ArrowUpRight, Filter, X, Sparkles } from 'lucide-react';
+import { Search, MapPin, Briefcase, IndianRupee, ArrowUpRight, Filter, X, Sparkles, Bookmark } from 'lucide-react';
 
 interface JobDiscoveryProps {
   onNavigate: (page: string, params?: any) => void;
@@ -15,6 +15,7 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
+  const [savedIds, setSavedIds] = useState<number[]>([]);
   
   const [q, setQ] = useState(currentParams?.skill || currentParams?.q || '');
   const [type, setType] = useState('');
@@ -31,6 +32,12 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
   }, [currentParams?.skill]);
 
   useEffect(() => {
+    if (isLoggedIn) {
+      getSavedJobIds().then(res => setSavedIds(res.data || [])).catch(() => {});
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
     fetchJobs(1);
     getJobCount().then(res => setTotalCount(res.data?.total_india || res.data?.count || 0)).catch(() => {});
   }, [type, city, sector, experience, salaryRange]);
@@ -39,6 +46,26 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
     const timeout = setTimeout(() => fetchJobs(1), 400);
     return () => clearTimeout(timeout);
   }, [q]);
+
+  const handleToggleSave = async (jobId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isLoggedIn) {
+      alert('Please log in as a student to save jobs.');
+      return;
+    }
+    const isSaved = savedIds.includes(jobId);
+    try {
+      if (isSaved) {
+        await unsaveJob(jobId);
+        setSavedIds(prev => prev.filter(id => id !== jobId));
+      } else {
+        await saveJob(jobId);
+        setSavedIds(prev => [...prev, jobId]);
+      }
+    } catch (err) {
+      console.error('Error toggling job save:', err);
+    }
+  };
 
   const parseFilters = () => {
     let experience_min: number | undefined = undefined;
@@ -255,15 +282,31 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
                       <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mt-0.5">{company}</p>
                     </div>
 
-                    {matchPct !== undefined && isLoggedIn && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                        matchPct >= 70 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                        matchPct >= 40 ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {Math.round(matchPct)}% Match
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {matchPct !== undefined && isLoggedIn && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          matchPct >= 70 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          matchPct >= 40 ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {Math.round(matchPct)}% Match
+                        </span>
+                      )}
+
+                      {isLoggedIn && (
+                        <button
+                          onClick={(e) => handleToggleSave(jobId, e)}
+                          title={savedIds.includes(jobId) ? 'Remove from saved' : 'Save job'}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            savedIds.includes(jobId)
+                              ? 'text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-400'
+                              : 'text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          <Bookmark className={`w-4 h-4 ${savedIds.includes(jobId) ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">

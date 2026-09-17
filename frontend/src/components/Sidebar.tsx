@@ -3,7 +3,7 @@ import {
   LayoutDashboard, User, Briefcase, TrendingUp, FileText, 
   Building2, Users, Star, MessageSquare, School, MapPin, 
   BookOpen, GraduationCap, LogOut, ShieldAlert, PanelLeftClose,
-  ClipboardList, Settings, Sparkles
+  ClipboardList, Settings, Sparkles, Bookmark, Bell
 } from 'lucide-react';
 
 export default function Sidebar({ currentPage, navigate, onClose }: { currentPage: string, navigate: (p: string) => void, onClose?: () => void }) {
@@ -15,6 +15,8 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
     { id: 'student/courses', icon: BookOpen, label: 'Govt Courses' },
     { id: 'student/recommended-jobs', icon: Sparkles, label: 'Suggested Jobs' },
     { id: 'student/jobs', icon: Briefcase, label: 'Browse Jobs' },
+    { id: 'student/saved-jobs', icon: Bookmark, label: 'Saved Jobs' },
+    { id: 'student/alerts', icon: Bell, label: 'Job Alerts' },
     { id: 'student/skills', icon: TrendingUp, label: 'Trending Skills' },
     { id: 'student/resume', icon: FileText, label: 'Resume Builder' },
   ];

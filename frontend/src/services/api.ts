@@ -39,6 +39,16 @@ export const getJobDetail = (id: string | number) => api.get(`/jobs/${id}`);
 export const getJobById = (id: string | number) => api.get(`/jobs/${id}`);
 export const getJobCount = (params?: any) => api.get('/jobs', { params });
 export const createJob = (data: any) => api.post('/jobs', data);
+export const getSavedJobs = () => api.get('/jobs/saved');
+export const getSavedJobIds = () => api.get('/jobs/saved/ids');
+export const saveJob = (jobId: string | number) => api.post(`/jobs/${jobId}/save`);
+export const unsaveJob = (jobId: string | number) => api.delete(`/jobs/${jobId}/save`);
+
+// ── Job Alerts ───────────────────────────────────────────────────────────────
+export const getJobAlerts = () => api.get('/job-alerts');
+export const createJobAlert = (data: any) => api.post('/job-alerts', data);
+export const deleteJobAlert = (alertId: string | number) => api.delete(`/job-alerts/${alertId}`);
+export const getJobAlertMatches = (alertId: string | number) => api.get(`/job-alerts/${alertId}/matches`);
 
 // ── Student ──────────────────────────────────────────────────────────────────
 export const getStudentProfile = () => api.get('/students/profile');

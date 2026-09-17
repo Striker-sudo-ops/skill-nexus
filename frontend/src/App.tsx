@@ -16,6 +16,8 @@ import Quiz from './pages/student/Quiz';
 import JobDiscovery from './pages/student/JobDiscovery';
 import JobDetail from './pages/student/JobDetail';
 import RecommendedJobs from './pages/student/RecommendedJobs';
+import SavedJobs from './pages/student/SavedJobs';
+import JobAlerts from './pages/student/JobAlerts';
 
 // Employer Pages
 import EmployerDashboard from './pages/employer/Dashboard';
@@ -238,6 +240,8 @@ const AppContent = () => {
           {currentPage === 'student/jobs' && <JobDiscovery onNavigate={navigate} currentParams={currentParams} />}
           {currentPage === 'student/recommended-jobs' && <RecommendedJobs onNavigate={navigate} />}
           {currentPage === 'student/job-detail' && <JobDetail jobId={currentParams.jobId} onNavigate={navigate} />}
+          {currentPage === 'student/saved-jobs' && <SavedJobs onNavigate={navigate} />}
+          {currentPage === 'student/alerts' && <JobAlerts onNavigate={navigate} />}
           
           {/* Employer Routes */}
           {currentPage === 'employer/dashboard' && <EmployerDashboard navigate={navigate} />}

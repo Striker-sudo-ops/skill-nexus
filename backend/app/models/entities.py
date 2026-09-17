@@ -167,6 +167,25 @@ class JobSkill(Base):
     skill_id = Column(Integer, ForeignKey('skills.id'))
     is_required = Column(Boolean, default=True)
 
+class SavedJob(Base):
+    __tablename__ = 'saved_jobs'
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey('students.id'))
+    job_id = Column(Integer, ForeignKey('jobs.id'))
+    saved_at = Column(DateTime, default=datetime.utcnow)
+
+class JobAlert(Base):
+    __tablename__ = 'job_alerts'
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey('students.id'))
+    title = Column(String, nullable=True)
+    skills = Column(String, nullable=True)       # comma-separated skill names
+    location = Column(String, nullable=True)     # city or state
+    job_type = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
 class Skill(Base):
     __tablename__ = 'skills'
     id = Column(Integer, primary_key=True)

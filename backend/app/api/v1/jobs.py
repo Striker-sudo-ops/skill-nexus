@@ -1,12 +1,21 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
-from typing import Optional
+from typing import Optional, List
+from pydantic import BaseModel
 from app.db.session import get_db
-from app.models.entities import Job, JobSkill, Skill, Employer, SkillResource
+from app.models.entities import Job, JobSkill, Skill, Employer, SkillResource, User, Student, SavedJob, JobAlert
 from app.services.ai_service import haversine
+from app.api.deps import get_current_user
 
 router = APIRouter()
+
+class JobAlertCreate(BaseModel):
+    title: Optional[str] = None
+    skills: Optional[str] = None
+    location: Optional[str] = None
+    job_type: Optional[str] = None
+    sector: Optional[str] = None
 
 @router.get('/jobs')
 def search_jobs(
@@ -97,6 +106,209 @@ def job_count(db: Session = Depends(get_db)):
     total = db.query(Job).filter(Job.is_active == True).count()
     by_city = db.query(Job.city, func.count(Job.id)).filter(Job.is_active == True).group_by(Job.city).all()
     return {"total_india": total, "by_city": [{"city": c[0], "count": c[1]} for c in by_city]}
+
+# ─── Saved Jobs (must precede /jobs/{job_id}) ─────────────────────────────────
+@router.get('/jobs/saved')
+def get_saved_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        return []
+    saved = db.query(SavedJob).filter(SavedJob.student_id == stu.id).order_by(desc(SavedJob.saved_at)).all()
+    results = []
+    for s in saved:
+        j = db.query(Job).filter(Job.id == s.job_id).first()
+        if not j:
+            continue
+        emp = db.query(Employer).filter(Employer.id == j.employer_id).first()
+        req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
+        skill_objs = []
+        for rs in req_skills:
+            sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+            if sk:
+                skill_objs.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
+        results.append({
+            "saved_id": s.id,
+            "saved_at": s.saved_at.isoformat() if s.saved_at else None,
+            "id": j.id,
+            "title": j.title,
+            "description": j.description,
+            "company_name": j.company_name or (emp.company_name if emp else None) or "Industry Partner",
+            "apply_url": j.apply_url,
+            "city": j.city,
+            "state": j.state,
+            "job_type": j.job_type,
+            "proficiency_required": j.proficiency_required,
+            "experience_years": j.experience_years,
+            "salary_min": j.salary_min or 450000,
+            "salary_max": j.salary_max or 950000,
+            "openings_count": j.openings_count or 1,
+            "sector": j.sector,
+            "source": j.source,
+            "required_skills": skill_objs,
+            "job": j
+        })
+    return results
+
+@router.get('/jobs/saved/ids')
+def get_saved_job_ids(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        return []
+    return [r[0] for r in db.query(SavedJob.job_id).filter(SavedJob.student_id == stu.id).all()]
+
+@router.post('/jobs/{job_id}/save')
+def save_job(job_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        stu = Student(user_id=current_user.id, full_name=current_user.email.split('@')[0], profile_complete_pct=30.0)
+        db.add(stu)
+        db.commit()
+        db.refresh(stu)
+    existing = db.query(SavedJob).filter(SavedJob.student_id == stu.id, SavedJob.job_id == job_id).first()
+    if not existing:
+        new_save = SavedJob(student_id=stu.id, job_id=job_id)
+        db.add(new_save)
+        db.commit()
+    return {"saved": True, "job_id": job_id}
+
+@router.delete('/jobs/{job_id}/save')
+def unsave_job(job_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if stu:
+        db.query(SavedJob).filter(SavedJob.student_id == stu.id, SavedJob.job_id == job_id).delete()
+        db.commit()
+    return {"saved": False, "job_id": job_id}
+
+# ─── Job Alerts ───────────────────────────────────────────────────────────────
+@router.get('/job-alerts')
+def list_job_alerts(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        return []
+    alerts = db.query(JobAlert).filter(JobAlert.student_id == stu.id).order_by(desc(JobAlert.created_at)).all()
+    results = []
+    for a in alerts:
+        q = db.query(Job).filter(Job.is_active == True)
+        if a.location:
+            q = q.filter((Job.city.ilike(f'%{a.location}%')) | (Job.state.ilike(f'%{a.location}%')))
+        if a.job_type:
+            q = q.filter(Job.job_type == a.job_type)
+        if a.sector:
+            q = q.filter(Job.sector.ilike(f'%{a.sector}%'))
+        jobs_filtered = q.all()
+        
+        if a.skills:
+            target_skills = [s.strip().lower() for s in a.skills.split(',') if s.strip()]
+            matched_count = 0
+            for j in jobs_filtered:
+                req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
+                skill_names = [
+                    db.query(Skill).filter(Skill.id == rs.skill_id).first().name.lower()
+                    for rs in req_skills if db.query(Skill).filter(Skill.id == rs.skill_id).first()
+                ]
+                if any(ts in skill_names or any(ts in sk for sk in skill_names) for ts in target_skills):
+                    matched_count += 1
+            match_count = matched_count
+        else:
+            match_count = len(jobs_filtered)
+
+        results.append({
+            "id": a.id,
+            "title": a.title or (f"{a.skills} in {a.location}" if a.skills and a.location else a.skills or a.location or "Job Alert"),
+            "skills": a.skills,
+            "location": a.location,
+            "job_type": a.job_type,
+            "sector": a.sector,
+            "is_active": a.is_active,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "matching_jobs_count": match_count
+        })
+    return results
+
+@router.post('/job-alerts')
+def create_job_alert(data: JobAlertCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        stu = Student(user_id=current_user.id, full_name=current_user.email.split('@')[0], profile_complete_pct=30.0)
+        db.add(stu)
+        db.commit()
+        db.refresh(stu)
+    new_alert = JobAlert(
+        student_id=stu.id,
+        title=data.title,
+        skills=data.skills,
+        location=data.location,
+        job_type=data.job_type,
+        sector=data.sector,
+        is_active=True
+    )
+    db.add(new_alert)
+    db.commit()
+    db.refresh(new_alert)
+    return {"success": True, "alert_id": new_alert.id}
+
+@router.delete('/job-alerts/{alert_id}')
+def delete_job_alert(alert_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if stu:
+        db.query(JobAlert).filter(JobAlert.id == alert_id, JobAlert.student_id == stu.id).delete()
+        db.commit()
+    return {"success": True}
+
+@router.get('/job-alerts/{alert_id}/matches')
+def get_job_alert_matches(alert_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        return []
+    a = db.query(JobAlert).filter(JobAlert.id == alert_id, JobAlert.student_id == stu.id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    q = db.query(Job).filter(Job.is_active == True)
+    if a.location:
+        q = q.filter((Job.city.ilike(f'%{a.location}%')) | (Job.state.ilike(f'%{a.location}%')))
+    if a.job_type:
+        q = q.filter(Job.job_type == a.job_type)
+    if a.sector:
+        q = q.filter(Job.sector.ilike(f'%{a.sector}%'))
+    jobs_filtered = q.all()
+
+    target_skills = [s.strip().lower() for s in a.skills.split(',') if s.strip()] if a.skills else []
+    results = []
+    for j in jobs_filtered:
+        req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
+        skill_objs = []
+        for rs in req_skills:
+            sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+            if sk:
+                skill_objs.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
+        
+        if target_skills:
+            skill_names = [so["name"].lower() for so in skill_objs]
+            if not any(ts in skill_names or any(ts in sk for sk in skill_names) for ts in target_skills):
+                continue
+
+        emp = db.query(Employer).filter(Employer.id == j.employer_id).first()
+        results.append({
+            "id": j.id,
+            "title": j.title,
+            "description": j.description,
+            "company_name": j.company_name or (emp.company_name if emp else None) or "Industry Partner",
+            "apply_url": j.apply_url,
+            "city": j.city,
+            "state": j.state,
+            "job_type": j.job_type,
+            "proficiency_required": j.proficiency_required,
+            "experience_years": j.experience_years,
+            "salary_min": j.salary_min or 450000,
+            "salary_max": j.salary_max or 950000,
+            "openings_count": j.openings_count or 1,
+            "sector": j.sector,
+            "source": j.source,
+            "required_skills": skill_objs,
+            "job": j
+        })
+    return results
 
 @router.get('/jobs/{job_id}')
 def get_job(job_id: int, db: Session = Depends(get_db)):
