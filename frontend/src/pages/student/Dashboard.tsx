@@ -37,28 +37,45 @@ export default function Dashboard({ navigate }: { navigate: (p: string, params?:
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
-      {/* Welcome Hero Card */}
-      <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xs border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
+      {/* Welcome Hero Banner */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-6 sm:p-8 shadow-lg border border-blue-600/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+        <div className="relative z-10 max-w-xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-blue-100 mb-3 border border-white/10">
+            <Sparkles className="w-3.5 h-3.5 text-blue-200" />
+            <span>Student Career & Skill Intelligence</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
             Hello, {user?.full_name || 'Student'}!
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500">
-            Welcome to your Skill Nexus technical career & skill intelligence dashboard.
+          <p className="text-blue-100/80 text-xs sm:text-sm leading-relaxed">
+            Welcome to your technical career hub. Explore AI-aligned openings, verify in-demand competencies, and accelerate your placement journey.
           </p>
         </div>
-        <div className="w-full sm:w-56 text-left sm:text-right bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-          <div className="flex justify-between text-xs font-semibold mb-1">
-            <span className="text-gray-600">Profile Strength:</span>
-            <span className="text-blue-700 font-bold">{completion}%</span>
+
+        <div className="w-full sm:w-64 relative z-10 bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20">
+          <div className="flex justify-between text-xs font-semibold mb-1.5 text-white">
+            <span className="text-blue-200">Profile Strength:</span>
+            <span className="text-white font-bold">{completion}%</span>
           </div>
-          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-600 transition-all rounded-full" style={{ width: `${completion}%` }} />
+          <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-all rounded-full shadow-xs" style={{ width: `${completion}%` }} />
           </div>
-          <div className="text-[11px] text-gray-400 mt-1">
-            {completion < 100 ? 'Complete profile for best job matches' : 'Profile fully optimized!'}
+          <div className="flex items-center justify-between mt-2 text-[11px] text-blue-200">
+            <span>{completion < 100 ? 'Complete for top matches' : 'Profile fully optimized!'}</span>
+            {completion < 100 && (
+              <button 
+                onClick={() => navigate('student/profile')}
+                className="font-bold text-white underline hover:text-blue-200 cursor-pointer ml-1"
+              >
+                Complete &rarr;
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Decorative background glow accents */}
+        <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute left-1/3 -top-10 w-40 h-40 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
       </div>
 
       {/* Quick Action Navigation Buttons */}

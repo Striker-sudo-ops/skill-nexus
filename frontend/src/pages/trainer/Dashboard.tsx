@@ -30,7 +30,7 @@ export default function TrainerDashboard({ navigate }: { navigate: (page: string
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-linear-to-r from-amber-600 via-orange-600 to-slate-900 text-white p-6 shadow-md">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-slate-900 text-white p-6 shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-amber-100 mb-2 border border-white/10">

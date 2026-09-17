@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getAdminOverview, exportReport, syncLiveTelemetry } from '../../services/api';
+import { getAdminOverview, exportReport, syncLiveTelemetry, wipeTelemetry } from '../../services/api';
 import { Card, Spinner } from '../../components/ui';
 import { 
   Users, BookOpen, School, Building2, TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle2,
   Download, ShieldCheck, MapPin, ChevronRight, Activity, Award,
-  Sparkles, Layers, RefreshCw
+  Sparkles, Layers, RefreshCw, Trash2
 } from 'lucide-react';
 
 export default function AdminDashboard({ navigate }: { navigate: (page: string) => void }) {
@@ -13,6 +13,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [wiping, setWiping] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,6 +56,26 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       setSyncResult(`Sync error: ${errDetail}`);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleWipe = async () => {
+    if (!window.confirm('Are you sure you want to wipe all ingested telemetry (jobs, skills, courses, districts)? User accounts will remain untouched.')) {
+      return;
+    }
+    setWiping(true);
+    setSyncResult(null);
+    try {
+      await wipeTelemetry();
+      setSyncResult('Database cleanly wiped. All telemetry reset to 0.');
+      const overviewRes = await getAdminOverview();
+      setData(overviewRes.data);
+    } catch (err: any) {
+      console.error('Wipe error:', err);
+      const errDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Check backend connection';
+      setSyncResult(`Wipe error: ${errDetail}`);
+    } finally {
+      setWiping(false);
     }
   };
 
@@ -620,15 +641,27 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
             </div>
           </div>
 
-          {/* Sync Live Data Button */}
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="w-full py-2 px-3 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Fetching Real-World Data...' : 'Sync Live Data'}
-          </button>
+          {/* Sync Live Data & Wipe Data Buttons */}
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={handleSync}
+              disabled={syncing || wiping}
+              className="flex-1 py-2 px-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Fetching...' : 'Sync Live Data'}
+            </button>
+
+            <button
+              onClick={handleWipe}
+              disabled={syncing || wiping}
+              className="py-2 px-3 text-xs font-bold rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 disabled:opacity-60 transition-all flex items-center justify-center gap-1 cursor-pointer"
+              title="Wipe all jobs, skills, and districts back to zero"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {wiping ? 'Wiping...' : 'Wipe Data'}
+            </button>
+          </div>
           {syncResult && (
             <p className="text-[10px] text-center text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
               {syncResult}

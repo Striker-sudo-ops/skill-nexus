@@ -83,8 +83,17 @@ export default function JobDiscovery({ onNavigate }: { onNavigate: (page: string
       ) : jobs.length === 0 ? (
         <div className="text-center py-16 bg-white border border-gray-200 rounded-2xl p-6 space-y-2">
           <Briefcase className="w-8 h-8 text-gray-400 mx-auto" />
-          <h3 className="font-bold text-sm text-gray-800">No jobs matched your query</h3>
-          <p className="text-xs text-gray-500">Try adjusting your keyword, job type or city filters.</p>
+          {(q || type || city) ? (
+            <>
+              <h3 className="font-bold text-sm text-gray-800">No jobs matched your query</h3>
+              <p className="text-xs text-gray-500">Try adjusting your keyword, job type or city filters.</p>
+            </>
+          ) : (
+            <>
+              <h3 className="font-bold text-sm text-gray-800">No live job listings yet</h3>
+              <p className="text-xs text-gray-500">Ask an admin to click <strong>Sync Live Data</strong> to fetch real job postings from industry portals.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

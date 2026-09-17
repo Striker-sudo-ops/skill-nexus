@@ -18,6 +18,23 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+def ensure_schema_compatibility():
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        if 'jobs' in inspector.get_table_names():
+            cols = [c['name'] for c in inspector.get_columns('jobs')]
+            with engine.connect() as conn:
+                if 'company_name' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN company_name VARCHAR'))
+                if 'apply_url' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN apply_url VARCHAR'))
+                conn.commit()
+    except Exception as e:
+        print(f'[Schema] Migration notice: {e}')
+
+ensure_schema_compatibility()
+
 async def telemetry_scheduler_loop():
     """
     Background worker loop:

@@ -137,6 +137,8 @@ class Job(Base):
     __tablename__ = 'jobs'
     id = Column(Integer, primary_key=True)
     employer_id = Column(Integer, ForeignKey('employers.id'))
+    company_name = Column(String, nullable=True)
+    apply_url = Column(String, nullable=True)
     title = Column(String)
     description = Column(Text)
     sector = Column(String, nullable=True)

@@ -136,6 +136,8 @@ def fetch_remotive_jobs(db: Session, db_skills: dict) -> int:
             city_info = _city_cycle(i)
             new_job = Job(
                 employer_id=employer_id,
+                company_name=company[:200] if company else None,
+                apply_url=j.get("url"),
                 title=title[:200],
                 description=desc[:2000],
                 sector="IT",
@@ -191,6 +193,8 @@ def fetch_arbeitnow_jobs(db: Session, db_skills: dict) -> int:
             city_info = _city_cycle(i + 5)
             new_job = Job(
                 employer_id=employer_id,
+                company_name=company[:200] if company else None,
+                apply_url=j.get("url"),
                 title=title[:200],
                 description=desc[:2000],
                 sector="IT",

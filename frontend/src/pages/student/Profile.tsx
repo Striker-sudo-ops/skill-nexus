@@ -204,7 +204,7 @@ export default function Profile({ navigate }: ProfileProps) {
       
       {/* 1. HERO IDENTITY & PROFILE PICTURE BANNER */}
       <section className="bg-white rounded-2xl shadow-xs border border-gray-200 overflow-hidden">
-        <div className="h-28 bg-linear-to-r from-blue-600 via-indigo-600 to-blue-700 relative">
+        <div className="h-28 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 relative">
           <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px]"></div>
         </div>
 
@@ -215,7 +215,7 @@ export default function Profile({ navigate }: ProfileProps) {
               {/* Profile Picture Avatar - floated up via negative margin on avatar only */}
               <div className="relative group -mt-12 shrink-0">
                 <div className="w-24 h-24 rounded-2xl bg-white p-1 shadow-lg border-2 border-white">
-                  <div className="w-full h-full rounded-xl bg-linear-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl shadow-inner tracking-wider select-none">
+                  <div className="w-full h-full rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl shadow-inner tracking-wider select-none">
                     {getInitials(personal.full_name)}
                   </div>
                 </div>
@@ -559,7 +559,7 @@ export default function Profile({ navigate }: ProfileProps) {
           </div>
 
           {/* Card B: Build Resume */}
-          <div className="border border-blue-100 hover:border-blue-400 rounded-2xl p-5 bg-linear-to-br from-blue-50/50 to-indigo-50/30 flex flex-col justify-between transition-all group">
+          <div className="border border-blue-100 hover:border-blue-400 rounded-2xl p-5 bg-gradient-to-br from-blue-50/50 to-indigo-50/30 flex flex-col justify-between transition-all group">
             <div className="space-y-3">
               <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
                 <FileText className="w-5 h-5" />

@@ -51,7 +51,8 @@ def search_jobs(
             "id": j.id,
             "title": j.title,
             "description": j.description,
-            "company_name": emp.company_name if emp else "Industry Partner",
+            "company_name": j.company_name or (emp.company_name if emp else None) or "Industry Partner",
+            "apply_url": j.apply_url,
             "city": j.city,
             "state": j.state,
             "job_type": j.job_type,
@@ -83,9 +84,12 @@ def job_count(db: Session = Depends(get_db)):
 @router.get('/jobs/{job_id}')
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        return {"job": None, "employer": None, "company_name": None, "required_skills": [], "resources": []}
     emp = db.query(Employer).filter(Employer.id == job.employer_id).first()
+    resolved_company = job.company_name or (emp.company_name if emp else None) or "Industry Partner"
     skills = db.query(JobSkill).filter(JobSkill.job_id == job_id).all()
     resources = []
     for s in skills:
         resources.extend(db.query(SkillResource).filter(SkillResource.skill_id == s.skill_id).all())
-    return {"job": job, "employer": emp, "required_skills": skills, "resources": resources}
+    return {"job": job, "employer": emp, "company_name": resolved_company, "apply_url": job.apply_url, "required_skills": skills, "resources": resources}

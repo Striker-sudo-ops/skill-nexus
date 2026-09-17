@@ -25,15 +25,37 @@ export default function EmployerDashboard({ navigate }: { navigate: (page: strin
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome, {profile.company_name || 'Employer'}!</h1>
-          <p className="text-gray-600">Manage your job postings and company profile.</p>
+      {/* Welcome Hero Banner */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-6 sm:p-8 shadow-lg border border-blue-600/30 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
+        <div className="relative z-10 max-w-xl">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-blue-100 mb-3 border border-white/10">
+            <span>Employer Talent Hub &bull; Industry Portal</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2">
+            Welcome, {profile?.company_name || 'Employer Partner'}!
+          </h1>
+          <p className="text-blue-100/80 text-xs sm:text-sm leading-relaxed">
+            Manage your verified job postings, search industry-trained candidates, and coordinate with regional training institutes.
+          </p>
         </div>
-        <div className="flex gap-4">
-          <Button variant="secondary" onClick={() => navigate('employer/profile')}>Edit Profile</Button>
-          <Button onClick={() => navigate('employer/jobs')}>Post New Job</Button>
+
+        <div className="flex items-center gap-3 relative z-10 shrink-0">
+          <button
+            onClick={() => navigate('employer/profile')}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold backdrop-blur-md transition-colors border border-white/15 cursor-pointer"
+          >
+            Edit Profile
+          </button>
+          <button
+            onClick={() => navigate('employer/jobs')}
+            className="px-4 py-2 bg-white text-blue-900 hover:bg-blue-50 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+          >
+            Post New Job
+          </button>
         </div>
+
+        {/* Decorative background glow accents */}
+        <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       <div className="grid grid-cols-3 gap-6">

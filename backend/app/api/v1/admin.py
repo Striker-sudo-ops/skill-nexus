@@ -363,3 +363,38 @@ def sync_live_data(db: Session = Depends(get_db)):
         "message": f"Sync complete. {results.get('total_new_jobs', 0)} new jobs ingested, {results.get('skill_trends_updated', 0)} skill trends updated, {results.get('districts_synced', 0)} Maharashtra districts refreshed.",
         "details": results
     }
+
+@router.post('/wipe-telemetry')
+def wipe_telemetry_data(db: Session = Depends(get_db)):
+    """
+    Clears all ingested telemetry: jobs, skills, districts, courses, trainers, and settings.
+    Preserves all User accounts (Admin, Students, Employers, Trainers).
+    """
+    from app.models.entities import (
+        JobSkill, Job, QuizQuestion, SkillResource, StudentSkill, Skill,
+        StudentCourse, CourseEnrollment, Course, CurriculumUpdate,
+        DistrictIntelligence, Trainer, CandidateFeedback, IndustryConsultation,
+        TrainingInstitute, SystemSetting
+    )
+    db.query(JobSkill).delete()
+    db.query(Job).delete()
+    db.query(QuizQuestion).delete()
+    db.query(SkillResource).delete()
+    db.query(StudentSkill).delete()
+    db.query(Skill).delete()
+    db.query(StudentCourse).delete()
+    db.query(CourseEnrollment).delete()
+    db.query(Course).delete()
+    db.query(CurriculumUpdate).delete()
+    db.query(DistrictIntelligence).delete()
+    db.query(Trainer).delete()
+    db.query(CandidateFeedback).delete()
+    db.query(IndustryConsultation).delete()
+    db.query(TrainingInstitute).delete()
+    db.query(SystemSetting).delete()
+    db.commit()
+    return {
+        "success": True,
+        "message": "All telemetry, jobs, skills, and districts have been cleanly wiped. User accounts remain active."
+    }
+

@@ -111,7 +111,16 @@ export default function TrendingSkills({ onNavigate }: { onNavigate: (page: stri
       ) : filteredSkills.length === 0 ? (
         <div className="text-center py-16 text-gray-400 dark:text-gray-500">
           <BarChart2 className="w-10 h-10 mx-auto mb-3 opacity-40" />
-          <p className="text-sm font-medium">No skills match your search</p>
+          {search ? (
+            <p className="text-sm font-medium">No skills match your search</p>
+          ) : skills.length === 0 ? (
+            <>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No skill data yet</p>
+              <p className="text-xs mt-1">Ask an admin to click <strong>Sync Live Data</strong> to populate skill trends from live market feeds.</p>
+            </>
+          ) : (
+            <p className="text-sm font-medium">No skills match your filter</p>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
