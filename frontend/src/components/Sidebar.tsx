@@ -6,6 +6,7 @@ import {
   ClipboardList, Settings, Sparkles, Bookmark, Bell
 } from 'lucide-react';
 
+
 export default function Sidebar({ currentPage, navigate, onClose }: { currentPage: string, navigate: (p: string) => void, onClose?: () => void }) {
   const { isStudent, isAdmin, isTrainer, user, logout } = useAuth();
 
@@ -37,11 +38,11 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
     { id: 'admin/courses', icon: BookOpen, label: 'Courses & Capacity' },
     { id: 'admin/enrollments', icon: ClipboardList, label: 'Enrollment Records' },
     { id: 'admin/trainers', icon: GraduationCap, label: 'Trainer Capability' },
-    { id: 'admin/curriculum', icon: ShieldAlert, label: 'Curriculum Updates' },
     { id: 'admin/skills', icon: TrendingUp, label: 'Manage Skills' },
+    { id: 'admin/jobs', icon: Briefcase, label: 'Manage Jobs' },
     { id: 'admin/settings', icon: Settings, label: 'Settings' },
-
   ];
+
 
   const trainerItems = [
     { id: 'trainer/dashboard', icon: LayoutDashboard, label: 'Dashboard' },

@@ -572,3 +572,79 @@ def get_source_stats(db: Session = Depends(get_db)):
         "total_jobs": total_active + total_expired,
     }
 
+
+# ─── Job Management (Admin) ───────────────────────────────────────────────────
+
+@router.get('/jobs')
+def get_admin_jobs(
+    q: Optional[str] = None,
+    source: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    page: int = 1,
+    per_page: int = 50,
+    db: Session = Depends(get_db)
+):
+    """List all jobs with search + filter for admin review."""
+    query = db.query(Job)
+    if q:
+        query = query.filter(
+            (Job.title.ilike(f'%{q}%')) |
+            (Job.company_name.ilike(f'%{q}%')) |
+            (Job.description.ilike(f'%{q}%'))
+        )
+    if source:
+        query = query.filter(Job.source == source)
+    if is_active is not None:
+        query = query.filter(Job.is_active == is_active)
+    total = query.count()
+    jobs = query.order_by(desc(Job.id)).offset((page - 1) * per_page).limit(per_page).all()
+    return {
+        "jobs": [
+            {
+                "id": j.id,
+                "title": j.title,
+                "company_name": j.company_name,
+                "source": j.source,
+                "city": j.city,
+                "sector": j.sector,
+                "is_active": j.is_active,
+                "last_seen_at": j.last_seen_at.isoformat() if j.last_seen_at else None,
+                "apply_url": j.apply_url,
+            }
+            for j in jobs
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page,
+    }
+
+
+@router.delete('/jobs/{job_id}')
+def delete_admin_job(job_id: int, db: Session = Depends(get_db)):
+    """Permanently delete a job and all its associations from the database."""
+    from app.models.entities import JobSkill, SavedJob
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    title = job.title
+    # Remove FK references first
+    db.query(JobSkill).filter(JobSkill.job_id == job_id).delete()
+    try:
+        db.query(SavedJob).filter(SavedJob.job_id == job_id).delete()
+    except Exception:
+        pass
+    db.delete(job)
+    db.commit()
+    return {"success": True, "message": f"Job '{title}' permanently deleted"}
+
+
+@router.patch('/jobs/{job_id}/deactivate')
+def deactivate_admin_job(job_id: int, db: Session = Depends(get_db)):
+    """Mark a job as inactive (soft-delete / expired) without removing it."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.is_active = False
+    db.commit()
+    return {"success": True, "message": f"Job '{job.title}' marked as inactive"}

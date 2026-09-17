@@ -744,33 +744,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
             </div>
           </div>
 
-          {/* Sync Live Data & Wipe Data Buttons */}
-          <div className="flex gap-2 mt-2">
-            <button
-              onClick={handleSync}
-              disabled={syncing || wiping}
-              className="flex-1 py-2 px-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Fetching...' : 'Sync Live Data'}
-            </button>
-
-            <button
-              onClick={handleWipe}
-              disabled={syncing || wiping}
-              className="py-2 px-3 text-xs font-bold rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 disabled:opacity-60 transition-all flex items-center justify-center gap-1 cursor-pointer"
-              title="Wipe all jobs, skills, and districts back to zero"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              {wiping ? 'Wiping...' : 'Wipe Data'}
-            </button>
-          </div>
-          {syncResult && (
-            <p className="text-[10px] text-center text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
-              {syncResult}
-            </p>
-          )}
-
+          {/* Sync/Wipe buttons are in the top banner — use Export below */}
           <button
             onClick={handleExport}
             className="w-full py-2 px-3 text-xs font-bold rounded-xl bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
@@ -779,6 +753,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
             Download Full Executive CSV
           </button>
         </Card>
+
       </div>
     </div>
   );

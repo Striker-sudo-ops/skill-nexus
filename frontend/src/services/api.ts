@@ -126,6 +126,10 @@ export const getAdminSkills = (params?: any) => api.get('/admin/skills', { param
 export const createAdminSkill = (data: any) => api.post('/admin/skills', data);
 export const updateAdminSkill = (id: number, data: any) => api.put(`/admin/skills/${id}`, data);
 export const deleteAdminSkill = (id: number) => api.delete(`/admin/skills/${id}`);
+export const getAdminJobs = (params?: any) => api.get('/admin/jobs', { params });
+export const deleteAdminJob = (id: number) => api.delete(`/admin/jobs/${id}`);
+export const deactivateAdminJob = (id: number) => api.patch(`/admin/jobs/${id}/deactivate`);
+
 
 
 // ── Trainer ──────────────────────────────────────────────────────────────────

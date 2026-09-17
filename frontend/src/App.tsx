@@ -37,6 +37,8 @@ import AdminTrainers from './pages/admin/Trainers';
 import AdminCurriculum from './pages/admin/Curriculum';
 import AdminSettings from './pages/admin/Settings';
 import AdminSkills from './pages/admin/Skills';
+import AdminJobs from './pages/admin/Jobs';
+
 
 
 // Trainer Pages
@@ -260,10 +262,9 @@ const AppContent = () => {
           {currentPage === 'admin/courses' && <AdminCourses />}
           {currentPage === 'admin/enrollments' && <AdminEnrollments />}
           {currentPage === 'admin/trainers' && <AdminTrainers />}
-          {currentPage === 'admin/curriculum' && <AdminCurriculum />}
           {currentPage === 'admin/settings' && <AdminSettings />}
           {currentPage === 'admin/skills' && <AdminSkills />}
-
+          {currentPage === 'admin/jobs' && <AdminJobs />}
 
           {/* Trainer Routes */}
           {currentPage === 'trainer/dashboard' && <TrainerDashboard navigate={navigate} />}
