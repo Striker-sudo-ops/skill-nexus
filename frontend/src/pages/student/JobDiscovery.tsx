@@ -11,6 +11,9 @@ interface JobDiscoveryProps {
 
 function getSourceBadge(src: string) {
   const s = (src || '').toLowerCase();
+  if (s.includes('indgovt') || s.includes('indgovtjobs')) return { label: 'Govt Recruitment', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' };
+  if (s.includes('freejobalert')) return { label: 'Public Sector / PSU', bg: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800' };
+  if (s.includes('remoteok')) return { label: 'RemoteOK Tech', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800' };
   if (s.includes('adzuna')) return { label: 'Adzuna India', bg: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800' };
   if (s.includes('jooble')) return { label: 'Jooble India', bg: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800' };
   if (s.includes('ncs')) return { label: 'Govt • NCS', bg: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800' };
@@ -225,12 +228,15 @@ export default function JobDiscovery({ onNavigate, currentParams }: JobDiscovery
             onChange={(e: any) => setSource(e.target.value)} 
             options={[
               { label: 'All Sources (Live)', value: '' },
+              { label: 'Govt Recruitment (India/MH)', value: 'indgovtjobs' },
+              { label: 'Public Sector / PSU', value: 'freejobalert' },
+              { label: 'RemoteOK Tech & AI', value: 'remoteok' },
+              { label: 'Jobicy (Remote)', value: 'jobicy' },
+              { label: 'Remotive (Remote)', value: 'remotive' },
               { label: 'Adzuna India Feed', value: 'adzuna' },
               { label: 'Jooble India Feed', value: 'jooble' },
               { label: 'NCS (Govt of India)', value: 'ncs' },
               { label: 'Mahaswayam (Govt MH)', value: 'mahaswayam' },
-              { label: 'Remotive (Remote/India)', value: 'remotive' },
-              { label: 'Jobicy (APAC/India)', value: 'jobicy' }
             ]} 
           />
           <Select 

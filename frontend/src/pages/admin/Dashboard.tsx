@@ -56,10 +56,13 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
       const res = await syncLiveTelemetry();
       const d = res.data?.details || {};
       const breakdown = [
+        d.jobs_from_indgovtjobs ? `Govt: ${d.jobs_from_indgovtjobs}` : null,
+        d.jobs_from_freejobalert ? `PSU: ${d.jobs_from_freejobalert}` : null,
+        d.jobs_from_remoteok ? `RemoteOK: ${d.jobs_from_remoteok}` : null,
+        d.jobs_from_jobicy ? `Jobicy: ${d.jobs_from_jobicy}` : null,
+        d.jobs_from_remotive ? `Remotive: ${d.jobs_from_remotive}` : null,
         d.jobs_from_adzuna ? `Adzuna: ${d.jobs_from_adzuna}` : null,
         d.jobs_from_jooble ? `Jooble: ${d.jobs_from_jooble}` : null,
-        d.jobs_from_remotive ? `Remotive: ${d.jobs_from_remotive}` : null,
-        d.jobs_from_jobicy ? `Jobicy: ${d.jobs_from_jobicy}` : null,
         d.jobs_from_ncs ? `NCS: ${d.jobs_from_ncs}` : null,
         d.jobs_from_mahaswayam ? `Mahaswayam: ${d.jobs_from_mahaswayam}` : null,
       ].filter(Boolean).join(' • ');
