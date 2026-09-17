@@ -38,7 +38,9 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
     { id: 'admin/enrollments', icon: ClipboardList, label: 'Enrollment Records' },
     { id: 'admin/trainers', icon: GraduationCap, label: 'Trainer Capability' },
     { id: 'admin/curriculum', icon: ShieldAlert, label: 'Curriculum Updates' },
+    { id: 'admin/skills', icon: TrendingUp, label: 'Manage Skills' },
     { id: 'admin/settings', icon: Settings, label: 'Settings' },
+
   ];
 
   const trainerItems = [

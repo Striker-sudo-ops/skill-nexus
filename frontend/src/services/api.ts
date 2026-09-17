@@ -122,6 +122,11 @@ export const syncLiveTelemetry = () => api.post('/admin/sync-live-data');
 export const wipeTelemetry = () => api.post('/admin/wipe-telemetry');
 export const getLastSync = () => api.get('/admin/last-sync');
 export const getSourceStats = () => api.get('/admin/source-stats');
+export const getAdminSkills = (params?: any) => api.get('/admin/skills', { params });
+export const createAdminSkill = (data: any) => api.post('/admin/skills', data);
+export const updateAdminSkill = (id: number, data: any) => api.put(`/admin/skills/${id}`, data);
+export const deleteAdminSkill = (id: number) => api.delete(`/admin/skills/${id}`);
+
 
 // ── Trainer ──────────────────────────────────────────────────────────────────
 export const getTrainerProfile = () => api.get('/trainer/profile');

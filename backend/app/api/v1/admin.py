@@ -130,6 +130,124 @@ def get_district_intelligence(
         }
     }
 
+# ─── Skills (Admin CRUD) ─────────────────────────────────────────────────────
+
+class SkillCreate(BaseModel):
+    name: str
+    domain: str
+    description: Optional[str] = None
+    demand_score: Optional[float] = 70.0
+    median_salary: Optional[int] = 600000
+    trend: Optional[str] = "RISING"
+
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    description: Optional[str] = None
+    demand_score: Optional[float] = None
+    median_salary: Optional[int] = None
+    trend: Optional[str] = None
+
+@router.get('/skills')
+def get_admin_skills(
+    search: Optional[str] = None,
+    domain: Optional[str] = None,
+    trend: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    from app.models.entities import JobSkill
+    query = db.query(Skill)
+    if search:
+        query = query.filter(Skill.name.ilike(f'%{search}%'))
+    if domain and domain != 'ALL':
+        query = query.filter(Skill.domain == domain)
+    if trend and trend != 'ALL':
+        query = query.filter(Skill.trend == trend)
+    skills = query.order_by(desc(Skill.demand_score)).all()
+    result = []
+    for s in skills:
+        job_count = db.query(JobSkill).filter(JobSkill.skill_id == s.id).count()
+        result.append({
+            "id": s.id,
+            "name": s.name,
+            "domain": s.domain,
+            "description": s.description,
+            "demand_score": s.demand_score,
+            "median_salary": s.median_salary,
+            "total_openings": s.total_openings or job_count,
+            "trend": s.trend,
+            "job_count": job_count,
+        })
+    domains = sorted(set(s["domain"] for s in result if s["domain"]))
+    return {"skills": result, "total": len(result), "domains": domains}
+
+@router.post('/skills')
+def create_admin_skill(skill_in: SkillCreate, db: Session = Depends(get_db)):
+    existing = db.query(Skill).filter(Skill.name == skill_in.name.strip()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Skill '{skill_in.name}' already exists")
+    valid_trends = {"HOT", "RISING", "STABLE", "DECLINING"}
+    trend = (skill_in.trend or "RISING").upper()
+    if trend not in valid_trends:
+        raise HTTPException(status_code=400, detail=f"Trend must be one of: {', '.join(valid_trends)}")
+    new_skill = Skill(
+        name=skill_in.name.strip(),
+        domain=skill_in.domain.strip(),
+        description=skill_in.description or f"Industry skill in {skill_in.domain}",
+        demand_score=min(100.0, max(0.0, skill_in.demand_score or 70.0)),
+        median_salary=skill_in.median_salary or 600000,
+        total_openings=0,
+        trend=trend,
+    )
+    db.add(new_skill)
+    db.commit()
+    db.refresh(new_skill)
+    return {"skill": new_skill, "message": f"Skill '{new_skill.name}' created successfully"}
+
+@router.put('/skills/{skill_id}')
+def update_admin_skill(skill_id: int, skill_in: SkillUpdate, db: Session = Depends(get_db)):
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    if skill_in.name is not None:
+        dup = db.query(Skill).filter(Skill.name == skill_in.name.strip(), Skill.id != skill_id).first()
+        if dup:
+            raise HTTPException(status_code=400, detail=f"Skill '{skill_in.name}' already exists")
+        skill.name = skill_in.name.strip()
+    if skill_in.domain is not None:
+        skill.domain = skill_in.domain.strip()
+    if skill_in.description is not None:
+        skill.description = skill_in.description
+    if skill_in.demand_score is not None:
+        skill.demand_score = min(100.0, max(0.0, skill_in.demand_score))
+    if skill_in.median_salary is not None:
+        skill.median_salary = skill_in.median_salary
+    if skill_in.trend is not None:
+        valid_trends = {"HOT", "RISING", "STABLE", "DECLINING"}
+        trend = skill_in.trend.upper()
+        if trend not in valid_trends:
+            raise HTTPException(status_code=400, detail=f"Trend must be one of: {', '.join(valid_trends)}")
+        skill.trend = trend
+    db.commit()
+    db.refresh(skill)
+    return {"skill": skill, "message": f"Skill '{skill.name}' updated successfully"}
+
+@router.delete('/skills/{skill_id}')
+def delete_admin_skill(skill_id: int, db: Session = Depends(get_db)):
+    from app.models.entities import JobSkill, SkillResource, QuizQuestion, StudentSkill
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    skill_name = skill.name
+    # Remove all FK references first
+    db.query(JobSkill).filter(JobSkill.skill_id == skill_id).delete()
+    db.query(SkillResource).filter(SkillResource.skill_id == skill_id).delete()
+    db.query(QuizQuestion).filter(QuizQuestion.skill_id == skill_id).delete()
+    db.query(StudentSkill).filter(StudentSkill.skill_id == skill_id).delete()
+    db.delete(skill)
+    db.commit()
+    return {"success": True, "message": f"Skill '{skill_name}' and all its references deleted"}
+
 # ─── Courses (Admin view + Add) ───────────────────────────────────────────────
 @router.get('/courses')
 def get_admin_courses(filter_type: Optional[str] = None, db: Session = Depends(get_db)):
