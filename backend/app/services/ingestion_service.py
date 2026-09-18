@@ -938,16 +938,34 @@ def sync_district_intelligence_from_jobs(db: Session) -> int:
             top_skill      = default_skill
             total_op       = base_cap
 
-        if demand_index >= 85:
+        # In real workforce planning:
+        # industry_demand = jobs/hiring openings in this district
+        # training_capacity = existing training seats in regional institutes/ITIs
+        industry_demand = total_op
+        # District training capacity: modeled from regional educational seats
+        training_capacity = base_cap
+        
+        # True Deficit or Surplus:
+        # Positive (+) = shortage (more jobs than trained graduates)
+        # Negative (-) = oversupply / surplus (more graduates than local industry can absorb)
+        deficit = industry_demand - training_capacity
+
+        if deficit > int(training_capacity * 0.35):
             status = "CRITICAL_SHORTAGE"
-        elif demand_index >= 65:
+            recommended_seats = int(industry_demand * 1.15)
+            recommended_action = f"Urgently add {deficit:,} new training seats in {primary_sector}"
+        elif deficit > 0:
             status = "HIGH_DEMAND"
+            recommended_seats = int(industry_demand * 1.05)
+            recommended_action = f"Expand vocational intake in {primary_sector} by {deficit:,} seats"
+        elif deficit < -int(training_capacity * 0.20):
+            status = "OVERSUPPLY"
+            recommended_seats = int(industry_demand * 0.95)
+            recommended_action = f"Pivot surplus {abs(deficit):,} seats away from {primary_sector} into rising tech"
         else:
             status = "BALANCED"
-
-        shortage_deficit   = int(total_op * 0.32)
-        recommended_seats  = int(total_op * 1.28)
-        recommended_action = f"Scale specialized training capacity in {primary_sector}"
+            recommended_seats = industry_demand
+            recommended_action = f"Maintain stable capacity in {primary_sector}"
 
         existing = db.query(DistrictIntelligence).filter(
             DistrictIntelligence.district == city,
@@ -957,8 +975,8 @@ def sync_district_intelligence_from_jobs(db: Session) -> int:
         if existing:
             existing.primary_sector     = primary_sector
             existing.demand_index       = demand_index
-            existing.current_capacity   = total_op
-            existing.shortage_deficit   = shortage_deficit
+            existing.current_capacity   = training_capacity
+            existing.shortage_deficit   = deficit
             existing.status             = status
             existing.top_demand_skill   = top_skill
             existing.recommended_seats  = recommended_seats
@@ -967,7 +985,7 @@ def sync_district_intelligence_from_jobs(db: Session) -> int:
             db.add(DistrictIntelligence(
                 state="Maharashtra", district=city,
                 primary_sector=primary_sector, demand_index=demand_index,
-                current_capacity=total_op, shortage_deficit=shortage_deficit,
+                current_capacity=training_capacity, shortage_deficit=deficit,
                 status=status, top_demand_skill=top_skill,
                 recommended_seats=recommended_seats, recommended_action=recommended_action,
             ))
