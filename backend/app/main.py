@@ -46,51 +46,8 @@ def ensure_schema_compatibility():
                 if 'status' not in course_cols:
                     conn.execute(text("ALTER TABLE courses ADD COLUMN status VARCHAR DEFAULT 'ACTIVE'"))
                 conn.commit()
-        # Create new tables if they don't exist (SQLAlchemy Base.metadata.create_all handles this,
-        # but we also run explicit checks for legacy DBs that may lack these tables)
-        table_names = inspector.get_table_names()
-        with engine.connect() as conn:
-            if 'messages' not in table_names:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS messages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        sender_user_id INTEGER REFERENCES users(id),
-                        recipient_user_id INTEGER REFERENCES users(id),
-                        subject VARCHAR,
-                        body TEXT,
-                        is_read BOOLEAN DEFAULT 0,
-                        parent_id INTEGER REFERENCES messages(id),
-                        created_at DATETIME
-                    )
-                """))
-            if 'employer_suggestions' not in table_names:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS employer_suggestions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        employer_id INTEGER REFERENCES employers(id),
-                        category VARCHAR,
-                        title VARCHAR,
-                        description TEXT,
-                        status VARCHAR DEFAULT 'PENDING',
-                        admin_response TEXT,
-                        responded_at DATETIME,
-                        created_at DATETIME
-                    )
-                """))
-            if 'course_feedbacks' not in table_names:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS course_feedbacks (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        student_id INTEGER REFERENCES students(id),
-                        course_id INTEGER REFERENCES courses(id),
-                        got_employed BOOLEAN,
-                        course_helped BOOLEAN,
-                        satisfaction_score INTEGER,
-                        feedback_text TEXT,
-                        submitted_at DATETIME
-                    )
-                """))
-            conn.commit()
+        # Create any missing tables defined in entities model (dialect-neutral for SQLite and Postgres)
+        Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f'[Schema] Migration notice: {e}')
 
@@ -123,7 +80,13 @@ async def telemetry_scheduler_loop():
 @app.on_event('startup')
 async def startup():
     seed()
-    asyncio.create_task(telemetry_scheduler_loop())
+    # On serverless platforms like Vercel, background tasks cause 504 invocation timeouts.
+    # Telemetry scraping runs safely in persistent environments or on explicit admin demand.
+    import os
+    if not os.getenv("VERCEL") and not os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        asyncio.create_task(telemetry_scheduler_loop())
+    else:
+        print("[Serverless] Skipping background telemetry loop to prevent function timeouts.")
 
 
 @app.get('/health')
