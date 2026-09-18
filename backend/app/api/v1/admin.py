@@ -267,33 +267,59 @@ class CourseCreate(BaseModel):
     domain: str
     depth_level: str
     skills_offered: str
-    industry_demand_alignment: Optional[float] = 80.0
+    industry_demand_alignment: Optional[float] = None
     related_job_roles: Optional[str] = None
     duration_weeks: Optional[int] = 12
     target_capacity: Optional[int] = 200
-    placement_rate: Optional[float] = 75.0
-    employer_satisfaction: Optional[float] = 80.0
+    placement_rate: Optional[float] = None
+    employer_satisfaction: Optional[float] = None
+    status: Optional[str] = "ACTIVE"
     ai_analysis: Optional[str] = None
+
+class CourseStatusUpdate(BaseModel):
+    status: str # ACTIVE, NOT_AVAILABLE, CAPACITY_FULL, OUTDATED
+    is_outdated: Optional[bool] = None
 
 @router.post('/courses')
 def create_admin_course(course_in: CourseCreate, db: Session = Depends(get_db)):
-    existing = db.query(Course).filter(Course.course_code == course_in.course_code).first()
+    code = course_in.course_code.strip().upper()
+    existing = db.query(Course).filter(Course.course_code == code).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f"Course code '{course_in.course_code}' already exists")
+        raise HTTPException(status_code=400, detail=f"Course code '{code}' already exists")
+
+    # Dynamic calculation of industry demand alignment based on live database skill demand
+    computed_alignment = course_in.industry_demand_alignment
+    skills_list = [s.strip() for s in course_in.skills_offered.split(',') if s.strip()]
+    if computed_alignment is None or computed_alignment == 80.0:
+        if skills_list:
+            db_skills = db.query(Skill).filter(Skill.name.in_(skills_list)).all()
+            if db_skills:
+                computed_alignment = round(sum(s.demand_score or 70.0 for s in db_skills) / len(db_skills), 1)
+            else:
+                computed_alignment = 82.5
+        else:
+            computed_alignment = 80.0
+
+    # Auto-generate curriculum intelligence analysis without mentioning AI
+    analysis_text = course_in.ai_analysis
+    if not analysis_text:
+        analysis_text = f"Curriculum is aligned at {computed_alignment}% with current industry hiring trends in the {course_in.domain} sector. Covers core competencies: {course_in.skills_offered}."
+
     new_course = Course(
-        course_code=course_in.course_code,
-        title=course_in.title,
-        description=course_in.description,
-        domain=course_in.domain,
+        course_code=code,
+        title=course_in.title.strip(),
+        description=course_in.description.strip(),
+        domain=course_in.domain.strip(),
         depth_level=course_in.depth_level,
-        skills_offered=course_in.skills_offered,
-        industry_demand_alignment=course_in.industry_demand_alignment or 80.0,
+        skills_offered=course_in.skills_offered.strip(),
+        industry_demand_alignment=computed_alignment,
         related_job_roles=course_in.related_job_roles or "",
         duration_weeks=course_in.duration_weeks or 12,
         target_capacity=course_in.target_capacity or 200,
-        placement_rate=course_in.placement_rate or 75.0,
-        employer_satisfaction=course_in.employer_satisfaction or 80.0,
-        ai_analysis=course_in.ai_analysis,
+        placement_rate=course_in.placement_rate, # Defaults to None for new courses
+        employer_satisfaction=course_in.employer_satisfaction,
+        status=course_in.status or "ACTIVE",
+        ai_analysis=analysis_text,
         enrolled_count=0,
         is_outdated=False,
         is_oversupplied=False,
@@ -303,7 +329,58 @@ def create_admin_course(course_in: CourseCreate, db: Session = Depends(get_db)):
     db.refresh(new_course)
     return new_course
 
+@router.put('/courses/{course_id}/status')
+def update_course_status(course_id: int, payload: CourseStatusUpdate, db: Session = Depends(get_db)):
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    st = payload.status.upper()
+    valid_statuses = {"ACTIVE", "NOT_AVAILABLE", "CAPACITY_FULL", "OUTDATED"}
+    if st not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(valid_statuses)}")
+    
+    course.status = st
+    if payload.is_outdated is not None:
+        course.is_outdated = payload.is_outdated
+    elif st == "OUTDATED":
+        course.is_outdated = True
+    elif st == "ACTIVE":
+        course.is_outdated = False
+
+    db.commit()
+    db.refresh(course)
+    return {"message": f"Course status updated to {course.status}", "course": course}
+
+@router.delete('/courses/{course_id}')
+def delete_admin_course(course_id: int, db: Session = Depends(get_db)):
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    code = course.course_code
+    title = course.title
+    
+    # Remove enrollments & student courses referencing this course
+    db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course_id).delete()
+    from app.models.entities import StudentCourse
+    db.query(StudentCourse).filter(StudentCourse.course_id == course_id).delete()
+    
+    # Also unassign from any trainers who have this course code
+    trainers = db.query(Trainer).all()
+    for t in trainers:
+        if t.courses_assigned:
+            c_list = [c.strip() for c in t.courses_assigned.split(',') if c.strip()]
+            if code in c_list:
+                c_list = [c for c in c_list if c != code]
+                t.courses_assigned = ", ".join(c_list)
+    
+    db.delete(course)
+    db.commit()
+    return {"success": True, "message": f"Course '{code} - {title}' deleted successfully"}
+
 # ─── Trainers ─────────────────────────────────────────────────────────────────
+
 class TrainerCreate(BaseModel):
     name: str
     email: str
@@ -382,6 +459,28 @@ def delete_admin_trainer(id: int, db: Session = Depends(get_db)):
     db.delete(trainer)
     db.commit()
     return {"message": "Trainer removed successfully", "id": id}
+
+class TrainerCoursesUpdate(BaseModel):
+    courses_assigned: str # comma-separated course codes
+
+@router.put('/trainers/{id}/courses')
+def update_trainer_courses(id: int, payload: TrainerCoursesUpdate, db: Session = Depends(get_db)):
+    trainer = db.query(Trainer).filter(Trainer.id == id).first()
+    if not trainer:
+        raise HTTPException(status_code=404, detail="Trainer not found")
+    
+    # Validate and clean up course codes
+    codes = [c.strip().upper() for c in payload.courses_assigned.split(',') if c.strip()]
+    trainer.courses_assigned = ", ".join(codes)
+    db.commit()
+    db.refresh(trainer)
+    return {
+        "success": True,
+        "message": f"Updated assigned courses for {trainer.name}",
+        "trainer": trainer,
+        "assigned_courses": codes
+    }
+
 
 # ─── Enrollments ─────────────────────────────────────────────────────────────
 @router.get('/enrollments')

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { getAdminTrainers, addAdminTrainer, removeAdminTrainer, getAdminCourses } from '../../services/api';
+import { getAdminTrainers, addAdminTrainer, removeAdminTrainer, getAdminCourses, updateTrainerCourses } from '../../services/api';
 import { Card, Badge, Spinner } from '../../components/ui';
 import { 
-  GraduationCap, AlertTriangle, CheckCircle, ArrowRight, 
-  X, Trash2, UserPlus, Search, KeyRound, Copy, Check, ShieldCheck
+  GraduationCap, AlertTriangle, CheckCircle, 
+  X, Trash2, UserPlus, Search, KeyRound, Copy, Check, ShieldCheck,
+  BookOpen, Info
 } from 'lucide-react';
 
 const DOMAINS = ['Mechanical', 'Electrical', 'Data Science', 'IT', 'Healthcare', 'Electronics', 'Civil', 'Textile', 'Robotics', 'Automotive EV'];
@@ -13,7 +14,7 @@ const EMPTY_FORM = {
   email: '',
   domain: 'IT',
   district: '',
-  state: '',
+  state: 'Maharashtra',
   skills: '',
   capability_score: 85,
   needs_upskilling: false,
@@ -29,13 +30,23 @@ export default function AdminTrainers() {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [selectedCourseCodes, setSelectedCourseCodes] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState<number | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<any>(null);
 
+  // Assign courses modal for existing trainer
+  const [assigningTrainer, setAssigningTrainer] = useState<any | null>(null);
+  const [assignCourseCodes, setAssignCourseCodes] = useState<string[]>([]);
+  const [assignSaving, setAssignSaving] = useState(false);
+
+  // View details modal
+  const [viewTrainer, setViewTrainer] = useState<any | null>(null);
+
   // New Trainer Credentials Modal State
   const [createdCredentials, setCreatedCredentials] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
+
 
   const loadData = () => {
     setLoading(true);
@@ -63,9 +74,14 @@ export default function AdminTrainers() {
     }
     setSaving(true);
     try {
-      const res = await addAdminTrainer(form);
+      const payload = {
+        ...form,
+        courses_assigned: selectedCourseCodes.join(', ')
+      };
+      const res = await addAdminTrainer(payload);
       setCreatedCredentials(res.data.credentials);
       setForm({ ...EMPTY_FORM });
+      setSelectedCourseCodes([]);
       setShowAddForm(false);
       loadData();
     } catch (err: any) {
@@ -80,6 +96,7 @@ export default function AdminTrainers() {
     try {
       await removeAdminTrainer(trainer.id);
       setConfirmRemove(null);
+      if (viewTrainer?.id === trainer.id) setViewTrainer(null);
       loadData();
     } catch (err: any) {
       alert(err.response?.data?.detail || err.message || 'Failed to remove trainer');
@@ -88,13 +105,47 @@ export default function AdminTrainers() {
     }
   };
 
+  const openAssignModal = (trainer: any) => {
+    const existing = (trainer.courses_assigned || '')
+      .split(',')
+      .map((c: string) => c.trim())
+      .filter(Boolean);
+    setAssignCourseCodes(existing);
+    setAssigningTrainer(trainer);
+  };
+
+  const handleSaveAssignedCourses = async () => {
+    if (!assigningTrainer) return;
+    setAssignSaving(true);
+    try {
+      await updateTrainerCourses(assigningTrainer.id, {
+        courses_assigned: assignCourseCodes.join(', ')
+      });
+      setAssigningTrainer(null);
+      loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to update assigned courses');
+    } finally {
+      setAssignSaving(false);
+    }
+  };
+
+  const toggleCourseCode = (code: string, currentList: string[], setList: (codes: string[]) => void) => {
+    if (currentList.includes(code)) {
+      setList(currentList.filter(c => c !== code));
+    } else {
+      setList([...currentList, code]);
+    }
+  };
+
   const copyCredentials = () => {
     if (!createdCredentials) return;
-    const text = `Trainer Login Credentials:\nTrainer ID: ${createdCredentials.trainer_id}\nEmail: ${createdCredentials.email}\nDefault Password: ${createdCredentials.default_password}\nPortal URL: http://localhost:5173`;
+    const text = `Trainer Login Credentials:\nTrainer ID: ${createdCredentials.trainer_id}\nEmail: ${createdCredentials.email}\nDefault Password: ${createdCredentials.default_password}`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -258,18 +309,55 @@ export default function AdminTrainers() {
                 <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Specialized Skills (comma-separated)</label>
                 <input className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" value={form.skills} onChange={e => setForm(f => ({ ...f, skills: e.target.value }))} placeholder="e.g. Python, Machine Learning, Data Analytics" />
               </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Assigned Course Codes</label>
-                <input className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" value={form.courses_assigned} onChange={e => setForm(f => ({ ...f, courses_assigned: e.target.value }))} placeholder="e.g. CRS-IT-101, CRS-DS-201" />
-              </div>
+
               <div>
                 <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Needs Upskilling?</label>
                 <select className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" value={form.needs_upskilling ? 'yes' : 'no'} onChange={e => setForm(f => ({ ...f, needs_upskilling: e.target.value === 'yes' }))}>
-                  <option value="no">No - Certified & Ready</option>
+                  <option value="no">No - Ready</option>
                   <option value="yes">Yes - Requires Upskilling</option>
                 </select>
               </div>
+
+              {/* Multi-Course Selector from Admin-created courses */}
+              <div className="sm:col-span-3">
+                <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Assign Courses (Select from all accredited courses created by Admin)
+                </label>
+                <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 max-h-48 overflow-y-auto space-y-1.5">
+                  {coursesList.length === 0 ? (
+                    <p className="text-xs text-gray-400">No courses created yet. Please add a course first in Courses & Capacity.</p>
+                  ) : (
+                    coursesList.map((course: any) => {
+                      const isChecked = selectedCourseCodes.includes(course.course_code);
+                      return (
+                        <label key={course.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer text-xs">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleCourseCode(course.course_code, selectedCourseCodes, setSelectedCourseCodes)}
+                            className="rounded text-blue-600"
+                          />
+                          <span className="font-mono font-bold text-gray-800 dark:text-gray-200">{course.course_code}</span>
+                          <span className="text-gray-600 dark:text-gray-400">— {course.title}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 ml-auto">{course.domain}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {selectedCourseCodes.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedCourseCodes.map(code => (
+                      <span key={code} className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+                        {code}
+                        <button type="button" onClick={() => setSelectedCourseCodes(prev => prev.filter(c => c !== code))} className="hover:text-red-500">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
             {form.needs_upskilling && (
               <div>
                 <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Recommended Upskilling Programme</label>
@@ -403,13 +491,29 @@ export default function AdminTrainers() {
                     </td>
 
                     <td className="py-3 px-3">
-                      <button
-                        onClick={() => setConfirmRemove(t)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
-                        title="Remove trainer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setViewTrainer(t)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="View Trainer Details"
+                        >
+                          <Info className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openAssignModal(t)}
+                          className="p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Assign / Edit Courses"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setConfirmRemove(t)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
+                          title="Remove trainer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -418,6 +522,144 @@ export default function AdminTrainers() {
           </div>
         </Card>
       )}
+
+      {/* Assign Courses to Existing Trainer Modal */}
+      {assigningTrainer && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[1000] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-100 dark:border-gray-800 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Assign Courses to Trainer</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{assigningTrainer.name} ({assigningTrainer.trainer_code || assigningTrainer.email})</p>
+              </div>
+              <button onClick={() => setAssigningTrainer(null)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                Select Accredited Courses (Multiple allowed):
+              </label>
+              <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800/60 max-h-60 overflow-y-auto space-y-2">
+                {coursesList.length === 0 ? (
+                  <p className="text-xs text-gray-400">No courses in catalog.</p>
+                ) : (
+                  coursesList.map((course: any) => {
+                    const isChecked = assignCourseCodes.includes(course.course_code);
+                    return (
+                      <label key={course.id} className="flex items-start gap-2.5 p-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 hover:border-blue-300 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleCourseCode(course.course_code, assignCourseCodes, setAssignCourseCodes)}
+                          className="mt-0.5 rounded text-blue-600"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{course.course_code}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{course.domain}</span>
+                          </div>
+                          <div className="font-semibold text-gray-900 dark:text-white mt-0.5">{course.title}</div>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-gray-500">{assignCourseCodes.length} course(s) selected</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setAssigningTrainer(null)}
+                  className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveAssignedCourses}
+                  disabled={assignSaving}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs cursor-pointer"
+                >
+                  {assignSaving ? 'Saving...' : 'Update Assigned Courses'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trainer Info Modal */}
+      {viewTrainer && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[1000] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-100 dark:border-gray-800 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">{viewTrainer.name}</h3>
+                <span className="font-mono text-xs text-blue-600 dark:text-blue-400">{viewTrainer.trainer_code || 'ID Pending'}</span>
+              </div>
+              <button onClick={() => setViewTrainer(null)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-gray-500">Email (Login):</span>
+                <span className="font-mono text-gray-900 dark:text-white">{viewTrainer.email}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-gray-500">Domain:</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{viewTrainer.domain}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-gray-500">Location:</span>
+                <span className="text-gray-900 dark:text-white">{viewTrainer.district ? `${viewTrainer.district}, ` : ''}{viewTrainer.state}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-800">
+                <span className="text-gray-500">Capability Score:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">{viewTrainer.capability_score} / 100</span>
+              </div>
+              <div className="py-1">
+                <span className="text-gray-500 block mb-1">Specialized Skills:</span>
+                <p className="text-gray-800 dark:text-gray-200">{viewTrainer.skills || 'Not specified'}</p>
+              </div>
+              <div className="py-1">
+                <span className="text-gray-500 block mb-1">Currently Assigned Courses:</span>
+                {viewTrainer.courses_assigned ? (
+                  <div className="flex flex-wrap gap-1">
+                    {viewTrainer.courses_assigned.split(',').map((c: string) => (
+                      <span key={c} className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                        {c.trim()}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-gray-400 italic">No courses currently assigned</span>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                onClick={() => { const tr = viewTrainer; setViewTrainer(null); openAssignModal(tr); }}
+                className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5" /> Assign / Edit Courses
+              </button>
+              <button
+                onClick={() => setViewTrainer(null)}
+                className="py-2 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

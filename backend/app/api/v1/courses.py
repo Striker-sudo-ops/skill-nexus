@@ -62,6 +62,7 @@ def get_course_detail(id: str, db: Session = Depends(get_db)):
             "target_capacity": course.target_capacity,
             "placement_rate": course.placement_rate,
             "employer_satisfaction": course.employer_satisfaction,
+            "status": getattr(course, 'status', 'ACTIVE') or 'ACTIVE',
             "is_outdated": course.is_outdated,
             "is_oversupplied": course.is_oversupplied,
             "ai_analysis": course.ai_analysis,
@@ -89,6 +90,15 @@ def enroll_course(id: str, req: EnrollReq, current_user: User = Depends(get_curr
         course = db.query(Course).filter(Course.course_code == id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
+
+    course_status = getattr(course, 'status', 'ACTIVE') or 'ACTIVE'
+    if course_status == 'NOT_AVAILABLE':
+        raise HTTPException(status_code=400, detail="This course is currently not available for new enrollments")
+    if course_status == 'OUTDATED' or course.is_outdated:
+        raise HTTPException(status_code=400, detail="This curriculum is currently flagged as outdated and undergoing revision")
+    if course_status == 'CAPACITY_FULL' or (course.enrolled_count >= course.target_capacity):
+        raise HTTPException(status_code=400, detail="This course batch capacity is currently full")
+
 
     student_id = None
     if current_user.role == 'STUDENT':

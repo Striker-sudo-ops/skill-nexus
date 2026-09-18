@@ -77,11 +77,13 @@ class Course(Base):
     duration_weeks = Column(Integer, default=12)
     enrolled_count = Column(Integer, default=0)
     target_capacity = Column(Integer, default=500)
-    placement_rate = Column(Float, default=75.0)
-    employer_satisfaction = Column(Float, default=85.0)
+    placement_rate = Column(Float, nullable=True, default=None)
+    employer_satisfaction = Column(Float, nullable=True, default=None)
+    status = Column(String, default="ACTIVE") # ACTIVE, NOT_AVAILABLE, CAPACITY_FULL, OUTDATED
     is_outdated = Column(Boolean, default=False)
     is_oversupplied = Column(Boolean, default=False)
     ai_analysis = Column(Text, nullable=True)
+
 
 class CourseEnrollment(Base):
     __tablename__ = 'course_enrollments'
@@ -150,6 +152,7 @@ class Job(Base):
     job_type = Column(String)
     proficiency_required = Column(String, default="INTERMEDIATE")
     experience_years = Column(Integer, default=1)
+    internship_duration = Column(String, nullable=True) # e.g. "3 Months", "6 Months"
     salary_min = Column(Integer, nullable=True)
     salary_max = Column(Integer, nullable=True)
     openings_count = Column(Integer, default=1)
@@ -159,6 +162,7 @@ class Job(Base):
     longitude = Column(Float, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class JobSkill(Base):
     __tablename__ = 'job_skills'

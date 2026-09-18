@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getEmployerJobs, postEmployerJob, updateEmployerJob, deleteEmployerJob, getSkills } from '../../services/api';
 import { Button, Input, Select, Spinner, useToast, Card, Badge } from '../../components/ui';
 import { Eye, Edit3, Trash2, Plus, X, Briefcase, MapPin, DollarSign, Clock, Users, CheckCircle2 } from 'lucide-react';
@@ -32,6 +32,7 @@ export default function JobPostings() {
     sector: 'Automotive & EV',
     description: '',
     job_type: 'FULL_TIME',
+    internship_duration: '3 Months',
     proficiency_required: 'INTERMEDIATE',
     experience_years: 1,
     salary_min: '',
@@ -73,6 +74,7 @@ export default function JobPostings() {
       sector: job.sector || 'Technology',
       description: job.description || '',
       job_type: job.job_type || 'FULL_TIME',
+      internship_duration: job.internship_duration || '3 Months',
       proficiency_required: job.proficiency_required || 'INTERMEDIATE',
       experience_years: job.experience_years ?? 1,
       salary_min: job.salary_min || '',
@@ -115,6 +117,7 @@ export default function JobPostings() {
         sector: form.sector,
         description: form.description,
         job_type: form.job_type,
+        internship_duration: form.job_type === 'INTERNSHIP' ? form.internship_duration : null,
         proficiency_required: form.proficiency_required,
         experience_years: Number(form.experience_years) || 0,
         salary_min: form.salary_min ? Number(form.salary_min) : null,
@@ -124,6 +127,7 @@ export default function JobPostings() {
         state: form.state,
         skills: selectedSkills.map(s => ({ skill_id: s.id, is_required: s.is_required !== false }))
       };
+
       
       if (editId) {
         await updateEmployerJob(editId.toString(), payload);
@@ -206,13 +210,23 @@ export default function JobPostings() {
                 value={form.job_type}
                 onChange={(e: any) => setForm({ ...form, job_type: e.target.value })}
               />
-              <Select
-                label="Required Proficiency"
-                options={proficiencies}
-                required
-                value={form.proficiency_required}
-                onChange={(e: any) => setForm({ ...form, proficiency_required: e.target.value })}
-              />
+              {form.job_type === 'INTERNSHIP' ? (
+                <Input
+                  label="Internship Period / Duration *"
+                  required
+                  placeholder="e.g. 3 Months, 6 Months"
+                  value={form.internship_duration}
+                  onChange={(e: any) => setForm({ ...form, internship_duration: e.target.value })}
+                />
+              ) : (
+                <Select
+                  label="Required Proficiency"
+                  options={proficiencies}
+                  required
+                  value={form.proficiency_required}
+                  onChange={(e: any) => setForm({ ...form, proficiency_required: e.target.value })}
+                />
+              )}
               <Input
                 label="Experience Required (Years)"
                 type="number"
@@ -230,6 +244,7 @@ export default function JobPostings() {
                 onChange={(e: any) => setForm({ ...form, openings_count: e.target.value })}
               />
             </div>
+
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Input

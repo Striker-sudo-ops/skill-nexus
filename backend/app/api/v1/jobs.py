@@ -91,6 +91,7 @@ def search_jobs(
             "salary_max": j.salary_max or 950000,
             "openings_count": j.openings_count or 1,
             "sector": j.sector,
+            "internship_duration": j.internship_duration,
             "source": j.source,
             "is_active": j.is_active,
             "last_seen_at": j.last_seen_at.isoformat() if j.last_seen_at else None,
@@ -98,6 +99,7 @@ def search_jobs(
             "distance": dist,
             "job": j
         })
+
 
     if lat and lng:
         results.sort(key=lambda x: x["distance"] if x["distance"] is not None else float('inf'))

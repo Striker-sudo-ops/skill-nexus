@@ -130,6 +130,11 @@ export const getAdminJobs = (params?: any) => api.get('/admin/jobs', { params })
 export const deleteAdminJob = (id: number) => api.delete(`/admin/jobs/${id}`);
 export const deactivateAdminJob = (id: number) => api.patch(`/admin/jobs/${id}/deactivate`);
 
+export const updateCourseStatus = (id: number, data: any) => api.put(`/admin/courses/${id}/status`, data);
+export const deleteAdminCourse = (id: number) => api.delete(`/admin/courses/${id}`);
+export const updateTrainerCourses = (id: number, data: any) => api.put(`/admin/trainers/${id}/courses`, data);
+
+
 
 
 // ── Trainer ──────────────────────────────────────────────────────────────────

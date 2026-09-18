@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
-import { getAdminCourses, addAdminCourse } from '../../services/api';
+﻿import { useState, useEffect } from 'react';
+import { getAdminCourses, addAdminCourse, updateCourseStatus, deleteAdminCourse } from '../../services/api';
 import { Card, Badge, Spinner } from '../../components/ui';
 import { 
-  BookOpen, AlertTriangle, CheckCircle, Sparkles, AlertCircle, 
-  TrendingUp, X, Info, Users, Plus, Check
+  BookOpen, AlertTriangle, CheckCircle, AlertCircle, 
+  TrendingUp, X, Info, Users, Plus, Check, Trash2, Ban, RefreshCw
 } from 'lucide-react';
 
 const DOMAINS = ['IT', 'Data Science', 'Healthcare', 'Mechanical', 'Electrical', 'Electronics', 'Civil', 'Textile', 'Robotics', 'Automotive EV'];
@@ -17,12 +17,9 @@ const EMPTY_COURSE = {
   depth_level: 'Intermediate',
   skills_offered: '',
   duration_weeks: 12,
-  industry_demand_alignment: 85,
   target_capacity: 250,
-  placement_rate: 80,
-  employer_satisfaction: 85,
   related_job_roles: '',
-  ai_analysis: ''
+  status: 'ACTIVE'
 };
 
 export default function AdminCourses() {
@@ -36,6 +33,7 @@ export default function AdminCourses() {
   const [form, setForm] = useState({ ...EMPTY_COURSE });
   const [submitting, setSubmitting] = useState(false);
   const [addSuccess, setAddSuccess] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   const fetchCourses = () => {
     setLoading(true);
@@ -57,7 +55,11 @@ export default function AdminCourses() {
     }
     setSubmitting(true);
     try {
-      await addAdminCourse(form);
+      await addAdminCourse({
+        ...form,
+        placement_rate: null, // New courses start without arbitrary placement rates
+        employer_satisfaction: null
+      });
       setAddSuccess(true);
       setTimeout(() => {
         setAddSuccess(false);
@@ -72,14 +74,45 @@ export default function AdminCourses() {
     }
   };
 
+  const handleStatusChange = async (courseId: number, newStatus: string) => {
+    setActionLoadingId(courseId);
+    try {
+      await updateCourseStatus(courseId, { status: newStatus });
+      fetchCourses();
+      if (selectedCourse?.id === courseId) {
+        setSelectedCourse((prev: any) => prev ? { ...prev, status: newStatus } : null);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to update course status');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleDeleteCourse = async (course: any) => {
+    if (!window.confirm(`Are you sure you want to permanently delete course "${course.course_code}: ${course.title}"? This will remove all associated enrollment records.`)) {
+      return;
+    }
+    setActionLoadingId(course.id);
+    try {
+      await deleteAdminCourse(course.id);
+      if (selectedCourse?.id === course.id) setSelectedCourse(null);
+      fetchCourses();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to delete course');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200 dark:border-gray-700">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Courses & Capacity Audit</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Courses & Capacity Management</h1>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Evaluate course relevance, industry alignment, placement rates, and dynamically create accredited curricula
+            Manage course availability, capacity thresholds, industry alignment, and accredited curriculum catalog
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -131,6 +164,7 @@ export default function AdminCourses() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {courses.map(c => {
             const isHighDemand = c.industry_demand_alignment >= 90.0;
+            const courseStatus = c.status || 'ACTIVE';
             return (
               <Card key={c.id} className="p-5 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-500 transition-all flex flex-col justify-between">
                 <div className="space-y-3">
@@ -145,19 +179,21 @@ export default function AdminCourses() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {c.is_outdated && (
+                      {courseStatus === 'NOT_AVAILABLE' ? (
+                        <span className="text-[11px] font-bold px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded flex items-center gap-1">
+                          <Ban className="w-3 h-3" /> Not Available
+                        </span>
+                      ) : courseStatus === 'CAPACITY_FULL' ? (
+                        <span className="text-[11px] font-bold px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded flex items-center gap-1">
+                          <Users className="w-3 h-3" /> Capacity Full
+                        </span>
+                      ) : (courseStatus === 'OUTDATED' || c.is_outdated) ? (
                         <span className="text-[11px] font-bold px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" /> Outdated
                         </span>
-                      )}
-                      {c.is_oversupplied && (
-                        <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 rounded flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> Oversupplied
-                        </span>
-                      )}
-                      {isHighDemand && !c.is_outdated && (
+                      ) : (
                         <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-400 rounded flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3" /> High Demand
+                          <CheckCircle className="w-3 h-3" /> Available
                         </span>
                       )}
                     </div>
@@ -191,11 +227,15 @@ export default function AdminCourses() {
                     </div>
                     <div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Placement</div>
-                      <div className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">{c.placement_rate}%</div>
+                      <div className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">
+                        {c.placement_rate !== null && c.placement_rate !== undefined ? `${c.placement_rate}%` : 'N/A'}
+                      </div>
                     </div>
                     <div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Emp. Sat.</div>
-                      <div className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">{c.employer_satisfaction}%</div>
+                      <div className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">
+                        {c.employer_satisfaction !== null && c.employer_satisfaction !== undefined ? `${c.employer_satisfaction}%` : 'N/A'}
+                      </div>
                     </div>
                   </div>
 
@@ -214,15 +254,38 @@ export default function AdminCourses() {
                   </div>
                 </div>
 
-                {/* Details button */}
-                <div className="pt-3 border-t border-gray-100 dark:border-gray-700 mt-3">
-                  <button
-                    onClick={() => setSelectedCourse(c)}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                  >
-                    <Info className="w-3.5 h-3.5" />
-                    View Full Details
-                  </button>
+                {/* Card Action Controls */}
+                <div className="pt-3 border-t border-gray-100 dark:border-gray-700 mt-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={courseStatus}
+                      disabled={actionLoadingId === c.id}
+                      onChange={(e) => handleStatusChange(c.id, e.target.value)}
+                      className="px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium cursor-pointer"
+                    >
+                      <option value="ACTIVE">Status: Available</option>
+                      <option value="NOT_AVAILABLE">Status: Not Available</option>
+                      <option value="CAPACITY_FULL">Status: Capacity Full</option>
+                      <option value="OUTDATED">Status: Outdated</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setSelectedCourse(c)}
+                      className="flex items-center gap-1 py-1.5 px-3 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                    >
+                      <Info className="w-3.5 h-3.5" /> Details
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCourse(c)}
+                      disabled={actionLoadingId === c.id}
+                      className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
+                      title="Delete Course"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </Card>
             );
@@ -252,7 +315,7 @@ export default function AdminCourses() {
                   <Check className="w-6 h-6" />
                 </div>
                 <h4 className="text-base font-bold text-gray-900 dark:text-white">Course Successfully Created!</h4>
-                <p className="text-xs text-gray-500">The curriculum has been registered and is now live across the portal.</p>
+                <p className="text-xs text-gray-500">Placement rate will be computed dynamically as student batches complete this course.</p>
               </div>
             ) : (
               <form onSubmit={handleCreateCourse} className="p-5 space-y-4">
@@ -338,18 +401,6 @@ export default function AdminCourses() {
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-300 mb-1">Industry Demand Alignment %</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={form.industry_demand_alignment}
-                      onChange={e => setForm(f => ({ ...f, industry_demand_alignment: Number(e.target.value) }))}
-                      className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  <div>
                     <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-300 mb-1">Target Training Capacity</label>
                     <input
                       type="number"
@@ -358,6 +409,18 @@ export default function AdminCourses() {
                       onChange={e => setForm(f => ({ ...f, target_capacity: Number(e.target.value) }))}
                       className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-300 mb-1">Initial Status</label>
+                    <select
+                      value={form.status}
+                      onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                      className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    >
+                      <option value="ACTIVE">Available for Enrollment</option>
+                      <option value="NOT_AVAILABLE">Not Available</option>
+                    </select>
                   </div>
 
                   <div className="sm:col-span-2">
@@ -386,7 +449,7 @@ export default function AdminCourses() {
                     className="px-5 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    {submitting ? 'Creating Course...' : 'Publish Accredited Course'}
+                    {submitting ? 'Publishing Course...' : 'Publish Accredited Course'}
                   </button>
                 </div>
               </form>
@@ -407,8 +470,9 @@ export default function AdminCourses() {
                     {selectedCourse.course_code}
                   </span>
                   <Badge color="blue">{selectedCourse.depth_level}</Badge>
-                  {selectedCourse.is_outdated && <Badge color="red">Outdated</Badge>}
-                  {selectedCourse.is_oversupplied && <Badge color="orange">Oversupplied</Badge>}
+                  <Badge color={selectedCourse.status === 'NOT_AVAILABLE' ? 'gray' : selectedCourse.status === 'CAPACITY_FULL' ? 'purple' : 'green'}>
+                    {selectedCourse.status || 'ACTIVE'}
+                  </Badge>
                 </div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">{selectedCourse.title}</h2>
               </div>
@@ -435,11 +499,15 @@ export default function AdminCourses() {
                 </div>
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 text-center">
                   <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider">Placement Rate</div>
-                  <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">{selectedCourse.placement_rate}%</div>
+                  <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                    {selectedCourse.placement_rate !== null && selectedCourse.placement_rate !== undefined ? `${selectedCourse.placement_rate}%` : 'N/A'}
+                  </div>
                 </div>
                 <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 text-center">
                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-wider">Employer Satisfaction</div>
-                  <div className="text-xl font-bold text-purple-700 dark:text-purple-300 mt-0.5">{selectedCourse.employer_satisfaction}%</div>
+                  <div className="text-xl font-bold text-purple-700 dark:text-purple-300 mt-0.5">
+                    {selectedCourse.employer_satisfaction !== null && selectedCourse.employer_satisfaction !== undefined ? `${selectedCourse.employer_satisfaction}%` : 'N/A'}
+                  </div>
                 </div>
               </div>
 
@@ -477,14 +545,13 @@ export default function AdminCourses() {
                 </div>
               </div>
 
-              {/* AI Analysis */}
+              {/* Intelligence Analysis */}
               {selectedCourse.ai_analysis && (
-                <div className="p-3.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl flex items-start gap-2.5">
-                  <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-1">AI Curriculum Analysis</div>
-                    <p className="text-xs text-blue-900 dark:text-blue-200 leading-relaxed">{selectedCourse.ai_analysis}</p>
+                <div className="p-3.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl">
+                  <div className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-1">
+                    Curriculum Intelligence Analysis
                   </div>
+                  <p className="text-xs text-blue-900 dark:text-blue-200 leading-relaxed">{selectedCourse.ai_analysis}</p>
                 </div>
               )}
             </div>

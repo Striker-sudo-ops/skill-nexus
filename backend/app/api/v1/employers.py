@@ -86,6 +86,7 @@ class JobCreateReq(BaseModel):
     description: str
     sector: Optional[str] = "Technology"
     job_type: str = "FULL_TIME"
+    internship_duration: Optional[str] = None # e.g. "3 Months", "6 Months"
     proficiency_required: str = "INTERMEDIATE" # BEGINNER, INTERMEDIATE, ADVANCED
     experience_years: int = 1
     salary_min: Optional[int] = None
@@ -104,6 +105,7 @@ def create_job(req: JobCreateReq, current_user: User = Depends(get_current_user)
         description=req.description,
         sector=req.sector,
         job_type=req.job_type,
+        internship_duration=req.internship_duration if req.job_type == "INTERNSHIP" else None,
         proficiency_required=req.proficiency_required,
         experience_years=req.experience_years,
         salary_min=req.salary_min,
@@ -132,6 +134,7 @@ def update_job(id: int, req: JobCreateReq, current_user: User = Depends(get_curr
     j.description = req.description
     j.sector = req.sector
     j.job_type = req.job_type
+    j.internship_duration = req.internship_duration if req.job_type == "INTERNSHIP" else None
     j.proficiency_required = req.proficiency_required
     j.experience_years = req.experience_years
     j.salary_min = req.salary_min
@@ -139,6 +142,7 @@ def update_job(id: int, req: JobCreateReq, current_user: User = Depends(get_curr
     j.openings_count = req.openings_count
     j.city = req.city
     j.state = req.state
+
     
     if req.skills:
         db.query(JobSkill).filter(JobSkill.job_id == j.id).delete()

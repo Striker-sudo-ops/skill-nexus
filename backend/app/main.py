@@ -37,9 +37,18 @@ def ensure_schema_compatibility():
                     conn.execute(text('ALTER TABLE jobs ADD COLUMN fetched_at DATETIME'))
                 if 'last_seen_at' not in cols:
                     conn.execute(text('ALTER TABLE jobs ADD COLUMN last_seen_at DATETIME'))
+                if 'internship_duration' not in cols:
+                    conn.execute(text('ALTER TABLE jobs ADD COLUMN internship_duration VARCHAR'))
+                conn.commit()
+        if 'courses' in inspector.get_table_names():
+            course_cols = [c['name'] for c in inspector.get_columns('courses')]
+            with engine.connect() as conn:
+                if 'status' not in course_cols:
+                    conn.execute(text("ALTER TABLE courses ADD COLUMN status VARCHAR DEFAULT 'ACTIVE'"))
                 conn.commit()
     except Exception as e:
         print(f'[Schema] Migration notice: {e}')
+
 
 ensure_schema_compatibility()
 

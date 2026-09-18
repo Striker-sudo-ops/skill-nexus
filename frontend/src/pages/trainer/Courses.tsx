@@ -50,12 +50,15 @@ export default function TrainerCourses() {
               <div className="grid grid-cols-2 gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl text-center text-xs">
                 <div>
                   <div className="text-[10px] text-gray-400">Placement Benchmark</div>
-                  <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{c.placement_rate}%</div>
+                  <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    {c.placement_rate !== null && c.placement_rate !== undefined ? `${c.placement_rate}%` : 'N/A'}
+                  </div>
                 </div>
                 <div>
                   <div className="text-[10px] text-gray-400">Class Enrollment</div>
                   <div className="font-bold text-gray-900 dark:text-white mt-0.5">{c.enrolled_count} / {c.target_capacity}</div>
                 </div>
+
               </div>
 
               <button
@@ -104,8 +107,11 @@ export default function TrainerCourses() {
                 <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase mb-1">
                   <Award className="w-3.5 h-3.5" /> Placement
                 </div>
-                <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{selected.placement_rate}%</div>
+                <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                  {selected.placement_rate !== null && selected.placement_rate !== undefined ? `${selected.placement_rate}%` : 'N/A'}
+                </div>
               </div>
+
               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
                 <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-semibold uppercase mb-1">
                   <Target className="w-3.5 h-3.5" /> Depth Level
