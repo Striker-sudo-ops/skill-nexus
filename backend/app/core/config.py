@@ -4,7 +4,15 @@ from pydantic_settings import BaseSettings
 
 # Establish absolute path to database in project root
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-DEFAULT_DB = f"sqlite:///{os.path.join(BASE_DIR, 'ssitap.db').replace(os.sep, '/')}"
+SQLITE_DB = f"sqlite:///{os.path.join(BASE_DIR, 'ssitap.db').replace(os.sep, '/')}"
+NEON_DB = "postgresql://neondb_owner:npg_DHRas15nlFPk@ep-winter-waterfall-b3sh513r-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+
+# In cloud/serverless environment (Vercel/Lambda), always use persistent Neon PostgreSQL.
+# In local development, default to SQLite unless DATABASE_URL is explicitly set.
+if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+    DEFAULT_DB = NEON_DB
+else:
+    DEFAULT_DB = SQLITE_DB
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Smart Skill Intelligence & Training Alignment Platform"
@@ -19,7 +27,7 @@ class Settings(BaseSettings):
     JOOBLE_API_KEY: str = os.getenv("JOOBLE_API_KEY", "")
     DATA_GOV_API_KEY: str = os.getenv("DATA_GOV_API_KEY", "")
 
-    # Dual database support: defaults to absolute SQLite path, easily overrides with PostgreSQL
+    # Dual database support: defaults to persistent Neon in cloud, easily overridden
     DATABASE_URL: str = os.getenv("DATABASE_URL", DEFAULT_DB)
     
     # CORS settings
