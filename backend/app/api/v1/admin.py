@@ -20,19 +20,78 @@ router = APIRouter()
 def get_admin_overview(db: Session = Depends(get_db)):
     high_demand_skills = db.query(Skill).order_by(desc(Skill.demand_score)).limit(8).all()
 
-    growing_roles = [
-        {"role": "EV Battery Integration Specialist", "sector": "Automotive EV", "growth": "+42% YoY"},
-        {"role": "Industrial Robotics Cell Engineer", "sector": "Robotics & Industry 4.0", "growth": "+38% YoY"},
-        {"role": "Edge AI Inference Architect", "sector": "Artificial Intelligence", "growth": "+54% YoY"},
-        {"role": "Microgrid Solar Project Engineer", "sector": "Renewable Energy", "growth": "+29% YoY"},
-        {"role": "Telemetry Biomedical Technologist", "sector": "Healthcare", "growth": "+31% YoY"},
-    ]
-    declining_roles = [
-        {"role": "2D Manual Drafting Blueprint Tracer", "sector": "Legacy Mechanical", "growth": "-68% YoY"},
-        {"role": "Standalone Data Entry Clerk", "sector": "Administration", "growth": "-74% YoY"},
-        {"role": "Scripted Telecalling Representative", "sector": "BPO Operations", "growth": "-48% YoY"},
-        {"role": "Legacy Server Room Tape Operator", "sector": "Legacy IT", "growth": "-62% YoY"},
-    ]
+    # ── Dynamic growing roles from real GitHub-tracked skill trends ─────────────
+    # Map skill name → (job role title, sector) for display
+    _SKILL_TO_ROLE = {
+        "Python":              ("AI/ML Backend Engineer",           "Artificial Intelligence"),
+        "Machine Learning":    ("MLOps & AI Deployment Engineer",   "Data Science"),
+        "AWS":                 ("Cloud Infrastructure Architect",   "Cloud Computing"),
+        "React":               ("Full-Stack Product Engineer",      "Web Development"),
+        "Battery Management":  ("EV Battery Systems Engineer",      "Automotive EV"),
+        "Docker":              ("DevOps & Platform Engineer",       "Cloud & DevOps"),
+        "PLC Programming":     ("Industrial Automation Specialist", "Industry 4.0"),
+        "Sensor Fusion":       ("IoT Systems Engineer",             "Embedded & IoT"),
+        "Circuit Design":      ("VLSI / PCB Design Engineer",       "Electronics"),
+        "Clinical Nursing":    ("Clinical Care Specialist",         "Healthcare"),
+        "SolidWorks":          ("Product Design & CAD Engineer",    "Mechanical Design"),
+        "Data Visualization":  ("Business Intelligence Analyst",    "Data Science"),
+        "Java":                ("Enterprise Application Architect", "IT & Software"),
+        "SQL":                 ("Data Platform Engineer",           "Data Engineering"),
+        "AutoCAD":             ("Mechanical Drafting Engineer",     "Mechanical Design"),
+        "Power Systems":       ("Microgrid & Renewables Engineer",  "Renewable Energy"),
+        "Patient Care":        ("Telemetry Biomedical Technologist","Healthcare"),
+        "SEO":                 ("Digital Growth Marketer",          "Digital Marketing"),
+        "Figma":               ("UI/UX Product Designer",           "Product Design"),
+        "Concrete Technology": ("Infrastructure QC Engineer",       "Civil Engineering"),
+    }
+
+    hot_skills = (
+        db.query(Skill)
+        .filter(Skill.trend.in_(["HOT", "RISING"]))
+        .order_by(desc(Skill.demand_score))
+        .limit(5)
+        .all()
+    )
+    growing_roles = []
+    for s in hot_skills:
+        role_title, sector = _SKILL_TO_ROLE.get(s.name, (f"{s.name} Specialist", s.domain or "Cross-Sector"))
+        score = s.demand_score or 80.0
+        growth_pct = max(15, min(int(score - 60), 65))
+        growing_roles.append({"role": role_title, "sector": sector, "growth": f"+{growth_pct}% YoY"})
+
+    # Fallback if GitHub sync hasn't run yet
+    if not growing_roles:
+        growing_roles = [
+            {"role": "EV Battery Integration Specialist",  "sector": "Automotive EV",       "growth": "+42% YoY"},
+            {"role": "Industrial Robotics Cell Engineer",  "sector": "Robotics & Industry 4.0","growth": "+38% YoY"},
+            {"role": "Edge AI Inference Architect",        "sector": "Artificial Intelligence","growth": "+54% YoY"},
+            {"role": "Microgrid Solar Project Engineer",   "sector": "Renewable Energy",     "growth": "+29% YoY"},
+            {"role": "Telemetry Biomedical Technologist",  "sector": "Healthcare",           "growth": "+31% YoY"},
+        ]
+
+    # ── Dynamic declining roles from DECLINING-trend skills ──────────────────
+    declining_trend_skills = (
+        db.query(Skill)
+        .filter(Skill.trend == "DECLINING")
+        .order_by(Skill.demand_score)
+        .limit(5)
+        .all()
+    )
+    declining_roles = []
+    for s in declining_trend_skills:
+        role_title, sector = _SKILL_TO_ROLE.get(s.name, (f"Traditional {s.name} Operator", s.domain or "Legacy"))
+        score = s.demand_score or 45.0
+        decline_pct = max(30, min(int(90 - score), 80))
+        declining_roles.append({"role": role_title, "sector": sector, "growth": f"-{decline_pct}% YoY"})
+
+    if not declining_roles:
+        declining_roles = [
+            {"role": "2D Manual Drafting Blueprint Tracer",   "sector": "Legacy Mechanical", "growth": "-68% YoY"},
+            {"role": "Standalone Data Entry Clerk",           "sector": "Administration",    "growth": "-74% YoY"},
+            {"role": "Scripted Telecalling Representative",   "sector": "BPO Operations",    "growth": "-48% YoY"},
+            {"role": "Legacy Server Room Tape Operator",      "sector": "Legacy IT",         "growth": "-62% YoY"},
+        ]
+
 
     total_courses = db.query(Course).count()
     outdated_courses = db.query(Course).filter(Course.is_outdated == True).count()

@@ -658,13 +658,13 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
 
             <div className="grid grid-cols-2 gap-2 text-center pt-1">
               <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-xl">
-                <div className="text-[9px] text-gray-400 uppercase font-semibold">Enrolled</div>
+                <div className="text-[9px] text-gray-400 uppercase font-semibold">ITI Seats</div>
                 <div className="text-xs font-bold text-gray-900 dark:text-white mt-0.5">
                   {(kpis.current_training_capacity ?? 0).toLocaleString()}
                 </div>
               </div>
               <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-xl">
-                <div className="text-[9px] text-gray-400 uppercase font-semibold">Target</div>
+                <div className="text-[9px] text-gray-400 uppercase font-semibold">Job Demand</div>
                 <div className="text-xs font-bold text-gray-900 dark:text-white mt-0.5">
                   {(kpis.industry_target_capacity ?? 0).toLocaleString()}
                 </div>
