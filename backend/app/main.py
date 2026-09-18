@@ -4,7 +4,7 @@ import asyncio
 from app.db.session import engine, Base, SessionLocal
 from app.db.seed_data import seed
 from app.models import entities
-from app.api.v1 import auth, students, employers, skills, jobs, quiz, admin, courses, trainer
+from app.api.v1 import auth, students, employers, skills, jobs, quiz, admin, courses, trainer, messages, suggestions, feedback
 
 app = FastAPI(title='Skill Nexus API', version='2.0.0')
 
@@ -46,6 +46,51 @@ def ensure_schema_compatibility():
                 if 'status' not in course_cols:
                     conn.execute(text("ALTER TABLE courses ADD COLUMN status VARCHAR DEFAULT 'ACTIVE'"))
                 conn.commit()
+        # Create new tables if they don't exist (SQLAlchemy Base.metadata.create_all handles this,
+        # but we also run explicit checks for legacy DBs that may lack these tables)
+        table_names = inspector.get_table_names()
+        with engine.connect() as conn:
+            if 'messages' not in table_names:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sender_user_id INTEGER REFERENCES users(id),
+                        recipient_user_id INTEGER REFERENCES users(id),
+                        subject VARCHAR,
+                        body TEXT,
+                        is_read BOOLEAN DEFAULT 0,
+                        parent_id INTEGER REFERENCES messages(id),
+                        created_at DATETIME
+                    )
+                """))
+            if 'employer_suggestions' not in table_names:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS employer_suggestions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        employer_id INTEGER REFERENCES employers(id),
+                        category VARCHAR,
+                        title VARCHAR,
+                        description TEXT,
+                        status VARCHAR DEFAULT 'PENDING',
+                        admin_response TEXT,
+                        responded_at DATETIME,
+                        created_at DATETIME
+                    )
+                """))
+            if 'course_feedbacks' not in table_names:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS course_feedbacks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        student_id INTEGER REFERENCES students(id),
+                        course_id INTEGER REFERENCES courses(id),
+                        got_employed BOOLEAN,
+                        course_helped BOOLEAN,
+                        satisfaction_score INTEGER,
+                        feedback_text TEXT,
+                        submitted_at DATETIME
+                    )
+                """))
+            conn.commit()
     except Exception as e:
         print(f'[Schema] Migration notice: {e}')
 
@@ -94,3 +139,6 @@ app.include_router(quiz.router, prefix='/api/v1', tags=['quiz'])
 app.include_router(admin.router, prefix='/api/v1/admin', tags=['admin'])
 app.include_router(courses.router, prefix='/api/v1/courses', tags=['courses'])
 app.include_router(trainer.router, prefix='/api/v1/trainer', tags=['trainer'])
+app.include_router(messages.router, prefix='/api/v1', tags=['messages'])
+app.include_router(suggestions.router, prefix='/api/v1', tags=['suggestions'])
+app.include_router(feedback.router, prefix='/api/v1', tags=['feedback'])

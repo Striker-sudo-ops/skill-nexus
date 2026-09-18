@@ -3,7 +3,7 @@ import {
   LayoutDashboard, User, Briefcase, TrendingUp, FileText, 
   Building2, Users, Star, MessageSquare, School, MapPin, 
   BookOpen, GraduationCap, LogOut, ShieldAlert, PanelLeftClose,
-  ClipboardList, Settings, Sparkles, Bookmark, Bell
+  ClipboardList, Settings, Sparkles, Bookmark, Bell, Inbox, Lightbulb
 } from 'lucide-react';
 
 
@@ -14,6 +14,7 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
     { id: 'student/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'student/profile', icon: User, label: 'My Profile' },
     { id: 'student/courses', icon: BookOpen, label: 'Govt Courses' },
+    { id: 'student/inbox', icon: Inbox, label: 'Inbox' },
     { id: 'student/recommended-jobs', icon: Sparkles, label: 'Suggested Jobs' },
     { id: 'student/jobs', icon: Briefcase, label: 'Browse Jobs' },
     { id: 'student/saved-jobs', icon: Bookmark, label: 'Saved Jobs' },
@@ -26,6 +27,8 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
     { id: 'employer/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'employer/profile', icon: Building2, label: 'Company Profile' },
     { id: 'employer/jobs', icon: Briefcase, label: 'Job Postings' },
+    { id: 'employer/inbox', icon: Inbox, label: 'Inbox' },
+    { id: 'employer/suggestions', icon: Lightbulb, label: 'Suggestions' },
     { id: 'employer/candidates', icon: Users, label: 'Search Candidates' },
     { id: 'employer/feedback', icon: Star, label: 'Rate Candidates' },
     { id: 'employer/consultations', icon: MessageSquare, label: 'Consultations' },
@@ -40,6 +43,7 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
     { id: 'admin/trainers', icon: GraduationCap, label: 'Trainer Capability' },
     { id: 'admin/skills', icon: TrendingUp, label: 'Manage Skills' },
     { id: 'admin/jobs', icon: Briefcase, label: 'Manage Jobs' },
+    { id: 'admin/suggestions', icon: Lightbulb, label: 'Employer Suggestions' },
     { id: 'admin/settings', icon: Settings, label: 'Settings' },
   ];
 

@@ -313,3 +313,43 @@ class SystemSetting(Base):
     value = Column(String)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class Message(Base):
+    """Bidirectional inbox messages between employers and students."""
+    __tablename__ = 'messages'
+    id = Column(Integer, primary_key=True)
+    sender_user_id = Column(Integer, ForeignKey('users.id'))
+    recipient_user_id = Column(Integer, ForeignKey('users.id'))
+    subject = Column(String)
+    body = Column(Text)
+    is_read = Column(Boolean, default=False)
+    parent_id = Column(Integer, ForeignKey('messages.id'), nullable=True)  # for threading replies
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmployerSuggestion(Base):
+    """Suggestions/feedback sent by employers to the government admin."""
+    __tablename__ = 'employer_suggestions'
+    id = Column(Integer, primary_key=True)
+    employer_id = Column(Integer, ForeignKey('employers.id'))
+    category = Column(String)  # COURSE_IMPROVEMENT, NEW_COURSE, SKILL_GAP, OTHER
+    title = Column(String)
+    description = Column(Text)
+    status = Column(String, default='PENDING')  # PENDING, REVIEWED, ACTIONED, REJECTED
+    admin_response = Column(Text, nullable=True)
+    responded_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CourseFeedback(Base):
+    """Post-completion feedback from students about course impact on employment."""
+    __tablename__ = 'course_feedbacks'
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey('students.id'))
+    course_id = Column(Integer, ForeignKey('courses.id'))
+    got_employed = Column(Boolean)           # did the student get a job after this course?
+    course_helped = Column(Boolean)          # did the course help in career/job search?
+    satisfaction_score = Column(Integer)     # 1-5 rating
+    feedback_text = Column(Text, nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+

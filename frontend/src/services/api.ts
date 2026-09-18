@@ -20,20 +20,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const loginUser = (data: any) => api.post('/auth/login', data);
 export const registerUser = (data: any) => api.post('/auth/register', data);
 export const getMe = () => api.get('/auth/me');
 export const changePassword = (data: any) => api.post('/auth/change-password', data);
 
-// ── Skills ───────────────────────────────────────────────────────────────────
+// â”€â”€ Skills â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getSkills = (params?: any) => api.get('/skills', { params });
 export const getSkillDetail = (id: string | number) => api.get(`/skills/${id}`);
 export const getSkillById = (id: string | number) => api.get(`/skills/${id}`);
 export const getTrendingSkills = (params?: any) => api.get('/skills', { params });
 export const getSkillDomains = () => api.get('/skills/domains');
 
-// ── Jobs ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Jobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getJobs = (params?: any) => api.get('/jobs', { params });
 export const getJobDetail = (id: string | number) => api.get(`/jobs/${id}`);
 export const getJobById = (id: string | number) => api.get(`/jobs/${id}`);
@@ -47,13 +47,13 @@ export const getJobSkillGap = (jobId: string | number) => api.get(`/jobs/${jobId
 export const getWhyRecommended = (jobId: string | number) => api.get(`/jobs/${jobId}/why-recommended`);
 export const getSalaryInsights = () => api.get('/analytics/salary-insights');
 
-// ── Job Alerts ───────────────────────────────────────────────────────────────
+// â”€â”€ Job Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getJobAlerts = () => api.get('/job-alerts');
 export const createJobAlert = (data: any) => api.post('/job-alerts', data);
 export const deleteJobAlert = (alertId: string | number) => api.delete(`/job-alerts/${alertId}`);
 export const getJobAlertMatches = (alertId: string | number) => api.get(`/job-alerts/${alertId}/matches`);
 
-// ── Student ──────────────────────────────────────────────────────────────────
+// â”€â”€ Student â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getStudentProfile = () => api.get('/students/profile');
 export const updateStudentProfile = (data: any) => api.put('/students/profile', data);
 export const addStudentLocations = (data: any) => api.post('/students/locations', data);
@@ -80,18 +80,18 @@ export const completeCourse = (data: any) => api.post('/students/courses/complet
 export const addCertificate = (data: any) => api.post('/students/certificates', data);
 export const syncSkills = () => api.post('/students/sync-skills', {});
 
-// ── Quiz ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Quiz â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getQuizQuestions = (skillId: string | number) => api.get(`/quiz/${skillId}/questions`);
 export const submitQuizAttempt = (data: any) => api.post('/quiz/submit', data);
 export const submitQuiz = (skillId: string | number, data: any) => api.post(`/quiz/${skillId}/submit`, data);
 
-// ── Courses ──────────────────────────────────────────────────────────────────
+// â”€â”€ Courses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getCourses = (params?: any) => api.get('/courses', { params });
 export const getCourseById = (id: string | number) => api.get(`/courses/${id}`);
 export const enrollCourse = (id: string | number, data: any) => api.post(`/courses/${id}/enroll`, data);
 export const getMyEnrollment = (id: string | number) => api.get(`/courses/${id}/my-enrollment`);
 
-// ── Employer ─────────────────────────────────────────────────────────────────
+// â”€â”€ Employer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getEmployerProfile = () => api.get('/employers/profile');
 export const updateEmployerProfile = (data: any) => api.put('/employers/profile', data);
 export const getEmployerJobs = () => api.get('/employers/jobs');
@@ -105,7 +105,7 @@ export const submitConsultation = (data: any) => api.post('/employers/consultati
 export const getConsultations = () => api.get('/employers/consultations');
 export const getTrainingInstitutes = (params?: any) => api.get('/employers/training-institutes', { params });
 
-// ── Admin ────────────────────────────────────────────────────────────────────
+// â”€â”€ Admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getAdminOverview = () => api.get('/admin/overview');
 export const getAdminDistricts = (params?: any) => api.get('/admin/districts', { params });
 export const getAdminCourses = (params?: any) => api.get('/admin/courses', { params });
@@ -137,10 +137,36 @@ export const updateTrainerCourses = (id: number, data: any) => api.put(`/admin/t
 
 
 
-// ── Trainer ──────────────────────────────────────────────────────────────────
+// â”€â”€ Trainer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getTrainerProfile = () => api.get('/trainer/profile');
 export const getTrainerCourses = () => api.get('/trainer/courses');
 export const getTrainerEnrollments = () => api.get('/trainer/enrollments');
 export const revokeEnrollment = (id: number, reason: string) => api.put(`/trainer/enrollments/${id}/revoke`, { reason });
 
+// ðŸ“¬ Inbox Messaging
+export const sendMessage = (data: any) => api.post('/messages/send', data);
+export const getInbox = () => api.get('/messages/inbox');
+export const getSentMessages = () => api.get('/messages/sent');
+export const getConversation = (otherUserId: number) => api.get(`/messages/conversation/${otherUserId}`);
+export const markMessageRead = (messageId: number) => api.put(`/messages/${messageId}/read`);
+export const getUnreadCount = () => api.get('/messages/unread-count');
+export const getContacts = () => api.get('/messages/contacts');
+
+// ðŸ’¡ Employer Suggestions to Government
+export const submitSuggestion = (data: any) => api.post('/suggestions', data);
+export const getMySuggestions = () => api.get('/suggestions/my');
+export const getAllSuggestions = (status?: string) => api.get('/suggestions', { params: status ? { status } : {} });
+export const respondToSuggestion = (id: number, data: any) => api.put(`/suggestions/${id}/respond`, data);
+
+// ðŸ“‹ Course Feedback & Placement Rating
+export const submitCourseFeedback = (data: any) => api.post('/courses/feedback', data);
+export const getCourseFeedback = (courseId: number) => api.get(`/courses/${courseId}/feedback`);
+export const getAllCourseFeedback = () => api.get('/courses/feedback/all');
+export const checkFeedbackStatus = (courseId: number) => api.get(`/courses/feedback/check/${courseId}`);
+export const overridePlacementRate = (courseId: number, rate: number) => api.put(`/courses/${courseId}/placement-rate`, { placement_rate: rate });
+
+// 🎓 Student search (for employer inbox)
+export const getAdminStudents = (q?: string) => api.get('/admin/students', { params: q ? { q } : {} });
+
 export default api;
+

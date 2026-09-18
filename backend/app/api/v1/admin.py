@@ -747,3 +747,29 @@ def deactivate_admin_job(job_id: int, db: Session = Depends(get_db)):
     job.is_active = False
     db.commit()
     return {"success": True, "message": f"Job '{job.title}' marked as inactive"}
+
+
+@router.get('/students')
+def list_students(q: str = None, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    """List all students — usable by admin and employers for inbox/messaging search."""
+    from app.models.entities import Student, StudentLocation, User
+    query = db.query(Student, User).join(User, User.id == Student.user_id)
+    if q:
+        query = query.filter(
+            (Student.full_name.ilike(f'%{q}%')) | (User.email.ilike(f'%{q}%'))
+        )
+    rows = query.limit(50).all()
+    result = []
+    for student, user in rows:
+        loc = db.query(StudentLocation).filter(
+            StudentLocation.student_id == student.id,
+            StudentLocation.is_primary == True
+        ).first()
+        result.append({
+            "user_id": user.id,
+            "full_name": student.full_name or user.email.split('@')[0],
+            "email": user.email,
+            "city": loc.city if loc else None,
+            "state": loc.state if loc else None,
+        })
+    return result

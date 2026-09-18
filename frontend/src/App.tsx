@@ -18,6 +18,7 @@ import JobDetail from './pages/student/JobDetail';
 import RecommendedJobs from './pages/student/RecommendedJobs';
 import SavedJobs from './pages/student/SavedJobs';
 import JobAlerts from './pages/student/JobAlerts';
+import StudentInbox from './pages/student/Inbox';
 
 // Employer Pages
 import EmployerDashboard from './pages/employer/Dashboard';
@@ -27,6 +28,8 @@ import CandidatesPage from './pages/employer/Candidates';
 import FeedbackPage from './pages/employer/Feedback';
 import ConsultationsPage from './pages/employer/Consultations';
 import InstitutesPage from './pages/employer/Institutes';
+import EmployerInbox from './pages/employer/Inbox';
+import EmployerSuggestions from './pages/employer/Suggestions';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
@@ -38,6 +41,7 @@ import AdminCurriculum from './pages/admin/Curriculum';
 import AdminSettings from './pages/admin/Settings';
 import AdminSkills from './pages/admin/Skills';
 import AdminJobs from './pages/admin/Jobs';
+import AdminSuggestions from './pages/admin/Suggestions';
 
 
 
@@ -246,11 +250,14 @@ const AppContent = () => {
           {currentPage === 'student/job-detail' && <JobDetail jobId={currentParams.jobId} onNavigate={navigate} />}
           {currentPage === 'student/saved-jobs' && <SavedJobs onNavigate={navigate} />}
           {currentPage === 'student/alerts' && <JobAlerts onNavigate={navigate} />}
+          {currentPage === 'student/inbox' && <StudentInbox />}
           
           {/* Employer Routes */}
           {currentPage === 'employer/dashboard' && <EmployerDashboard navigate={navigate} />}
           {currentPage === 'employer/profile' && <EmployerProfile />}
           {currentPage === 'employer/jobs' && <JobPostings />}
+          {currentPage === 'employer/inbox' && <EmployerInbox />}
+          {currentPage === 'employer/suggestions' && <EmployerSuggestions />}
           {currentPage === 'employer/candidates' && <CandidatesPage />}
           {currentPage === 'employer/feedback' && <FeedbackPage />}
           {currentPage === 'employer/consultations' && <ConsultationsPage />}
@@ -265,6 +272,7 @@ const AppContent = () => {
           {currentPage === 'admin/settings' && <AdminSettings />}
           {currentPage === 'admin/skills' && <AdminSkills />}
           {currentPage === 'admin/jobs' && <AdminJobs />}
+          {currentPage === 'admin/suggestions' && <AdminSuggestions />}
 
           {/* Trainer Routes */}
           {currentPage === 'trainer/dashboard' && <TrainerDashboard navigate={navigate} />}

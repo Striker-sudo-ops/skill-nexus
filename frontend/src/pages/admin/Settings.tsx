@@ -1,11 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../../components/ui';
-import { Settings, Globe, Bell, Shield, Palette, Save, CheckCircle2 } from 'lucide-react';
+import { Settings, Globe, Bell, Shield, Palette, Save, CheckCircle2, Award, RefreshCw, Edit2, Check } from 'lucide-react';
+import { getAdminCourses, overridePlacementRate, getAllCourseFeedback } from '../../services/api';
 
 export default function AdminSettings() {
   const [saved, setSaved] = useState(false);
   const [portalName, setPortalName] = useState('Skill Nexus');
   const [contactEmail, setContactEmail] = useState('admin@skillnexus.in');
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+  const [editingCourseId, setEditingCourseId] = useState<number | null>(null);
+  const [editRateVal, setEditRateVal] = useState<string>('');
+  const [savingRate, setSavingRate] = useState(false);
+  const [feedbackList, setFeedbackList] = useState<any[]>([]);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [features, setFeatures] = useState({
     studentRegistration: true,
     employerAccess: true,
@@ -14,6 +22,43 @@ export default function AdminSettings() {
     jobRecommendations: true,
     trainerPortal: true,
   });
+
+  const loadCoursesAndFeedback = async () => {
+    try {
+      setLoadingCourses(true);
+      setLoadingFeedback(true);
+      const [coursesRes, feedbackRes] = await Promise.all([
+        getAdminCourses(),
+        getAllCourseFeedback()
+      ]);
+      setCourses(coursesRes.data || []);
+      setFeedbackList(feedbackRes.data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingCourses(false);
+      setLoadingFeedback(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCoursesAndFeedback();
+  }, []);
+
+  const handleSaveRate = async (courseId: number) => {
+    const num = parseFloat(editRateVal);
+    if (isNaN(num) || num < 0 || num > 100) return;
+    try {
+      setSavingRate(true);
+      await overridePlacementRate(courseId, num);
+      setEditingCourseId(null);
+      await loadCoursesAndFeedback();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingRate(false);
+    }
+  };
 
   const handleSave = () => {
     // In production, this would call an API endpoint.
@@ -152,6 +197,120 @@ export default function AdminSettings() {
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* Course Placement Rates & Feedback Management */}
+      <Card className="p-6 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <Award className="w-4 h-4 text-emerald-600" />
+            <div>
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">Course Placement & Employability Ratings</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Placement ratings are auto-computed from student post-completion feedback or can be manually overridden. Ratings ≥30% are shown to students.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={loadCoursesAndFeedback}
+            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg cursor-pointer transition-colors"
+            title="Refresh Courses"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingCourses ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {loadingCourses ? (
+          <div className="text-center py-6 text-xs text-gray-400">Loading courses and ratings...</div>
+        ) : courses.length === 0 ? (
+          <div className="text-center py-6 text-xs text-gray-400">No courses found in database.</div>
+        ) : (
+          <div className="space-y-2.5">
+            {courses.map((course: any) => {
+              const courseFeedbacks = feedbackList.filter((f: any) => f.course_id === course.id);
+              const isEditing = editingCourseId === course.id;
+              const hasRating = course.placement_rate !== null && course.placement_rate !== undefined;
+
+              return (
+                <div
+                  key={course.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30 border border-gray-100 dark:border-gray-700 gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900 dark:text-white truncate">{course.title}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 font-mono">
+                        {course.course_code}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-2">
+                      <span>Feedbacks received: <strong>{courseFeedbacks.length}</strong></span>
+                      <span>•</span>
+                      <span>Alignment: <strong>{course.industry_demand_alignment}%</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          placeholder="0 - 100"
+                          value={editRateVal}
+                          onChange={(e) => setEditRateVal(e.target.value)}
+                          className="w-20 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                        <button
+                          onClick={() => handleSaveRate(course.id)}
+                          disabled={savingRate}
+                          className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer text-xs flex items-center gap-1 disabled:opacity-50"
+                          title="Save Placement Rate"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditingCourseId(null)}
+                          className="p-1.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded-lg cursor-pointer text-xs"
+                          title="Cancel"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                            hasRating
+                              ? course.placement_rate >= 30
+                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600'
+                          }`}
+                        >
+                          {hasRating ? `${course.placement_rate}% Placed` : 'Not Rated Yet'}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setEditingCourseId(course.id);
+                            setEditRateVal(course.placement_rate !== null && course.placement_rate !== undefined ? String(course.placement_rate) : '');
+                          }}
+                          className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md cursor-pointer"
+                          title="Edit Placement Rate"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       {/* Save */}
