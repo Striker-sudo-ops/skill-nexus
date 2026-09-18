@@ -18,6 +18,8 @@ router = APIRouter()
 # ─── Overview ────────────────────────────────────────────────────────────────
 @router.get('/overview')
 def get_admin_overview(db: Session = Depends(get_db)):
+    from app.services.ingestion_service import ensure_district_intelligence
+    ensure_district_intelligence(db)
     high_demand_skills = db.query(Skill).order_by(desc(Skill.demand_score)).limit(8).all()
 
     # ── Dynamic growing roles from real GitHub-tracked skill trends ─────────────
@@ -172,6 +174,8 @@ def get_district_intelligence(
     status: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
+    from app.services.ingestion_service import ensure_district_intelligence
+    ensure_district_intelligence(db)
     query = db.query(DistrictIntelligence)
     if state and state != 'ALL':
         query = query.filter(DistrictIntelligence.state == state)
