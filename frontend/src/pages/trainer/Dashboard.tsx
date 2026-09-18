@@ -112,7 +112,7 @@ export default function TrainerDashboard({ navigate }: { navigate: (page: string
                   <div className="font-bold text-xs text-gray-900 dark:text-white">{c.title}</div>
                   <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 pt-1">
                     <span>Enrolled: {c.enrolled_count} / {c.target_capacity}</span>
-                    <span>Placement Track: {c.placement_rate}%</span>
+                    <span>Duration: {c.duration_weeks} Wks</span>
                   </div>
                 </div>
               ))

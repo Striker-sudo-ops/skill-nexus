@@ -49,9 +49,9 @@ export default function TrainerCourses() {
 
               <div className="grid grid-cols-2 gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl text-center text-xs">
                 <div>
-                  <div className="text-[10px] text-gray-400">Placement Benchmark</div>
-                  <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    {c.placement_rate !== null && c.placement_rate !== undefined ? `${c.placement_rate}%` : 'N/A'}
+                  <div className="text-[10px] text-gray-400">Duration</div>
+                  <div className="font-bold text-blue-600 dark:text-blue-400 mt-0.5">
+                    {c.duration_weeks} Weeks
                   </div>
                 </div>
                 <div>
@@ -103,12 +103,12 @@ export default function TrainerCourses() {
                   <span className="text-xs text-gray-400 font-normal"> / {selected.target_capacity}</span>
                 </div>
               </div>
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase mb-1">
-                  <Award className="w-3.5 h-3.5" /> Placement
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-800">
+                <div className="flex items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase mb-1">
+                  <BookOpen className="w-3.5 h-3.5" /> Duration
                 </div>
-                <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
-                  {selected.placement_rate !== null && selected.placement_rate !== undefined ? `${selected.placement_rate}%` : 'N/A'}
+                <div className="text-lg font-bold text-blue-700 dark:text-blue-300">
+                  {selected.duration_weeks} Weeks
                 </div>
               </div>
 

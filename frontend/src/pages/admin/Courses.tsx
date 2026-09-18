@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { getAdminCourses, addAdminCourse, updateCourseStatus, deleteAdminCourse } from '../../services/api';
 import { Card, Badge, Spinner } from '../../components/ui';
 import { 
@@ -220,16 +220,10 @@ export default function AdminCourses() {
                   </div>
 
                   {/* Metrics Row */}
-                  <div className="grid grid-cols-3 gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-700 text-center">
+                  <div className="grid grid-cols-2 gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-700 text-center">
                     <div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Alignment</div>
                       <div className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">{c.industry_demand_alignment}%</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Placement</div>
-                      <div className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">
-                        {c.placement_rate !== null && c.placement_rate !== undefined ? `${c.placement_rate}%` : 'N/A'}
-                      </div>
                     </div>
                     <div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Emp. Sat.</div>
@@ -492,16 +486,10 @@ export default function AdminCourses() {
               </div>
 
               {/* Metrics grid */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-center">
                   <div className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wider">Industry Alignment</div>
                   <div className="text-xl font-bold text-blue-700 dark:text-blue-300 mt-0.5">{selectedCourse.industry_demand_alignment}%</div>
-                </div>
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 text-center">
-                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider">Placement Rate</div>
-                  <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
-                    {selectedCourse.placement_rate !== null && selectedCourse.placement_rate !== undefined ? `${selectedCourse.placement_rate}%` : 'N/A'}
-                  </div>
                 </div>
                 <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 text-center">
                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-wider">Employer Satisfaction</div>

@@ -225,19 +225,15 @@ export default function CourseCatalog() {
                   </div>
 
                   {/* Metrics snapshot */}
-                  <div className={`grid ${course.placement_rate !== null && course.placement_rate !== undefined && course.placement_rate >= 30 ? 'grid-cols-2' : 'grid-cols-1'} gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-700 text-center`}>
+                  <div className="grid grid-cols-2 gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-700 text-center">
                     <div>
                       <div className="text-[10px] text-gray-500 dark:text-gray-400">Industry Match</div>
                       <div className="text-sm font-bold text-blue-600 dark:text-blue-400">{course.industry_demand_alignment}%</div>
                     </div>
-                    {course.placement_rate !== null && course.placement_rate !== undefined && course.placement_rate >= 30 && (
-                      <div>
-                        <div className="text-[10px] text-gray-500 dark:text-gray-400">Placement</div>
-                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                          {course.placement_rate}%
-                        </div>
-                      </div>
-                    )}
+                    <div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400">Duration</div>
+                      <div className="text-sm font-bold text-gray-900 dark:text-white">{course.duration_weeks} Wks</div>
+                    </div>
                   </div>
 
                   {/* Meta stats */}
@@ -348,20 +344,11 @@ export default function CourseCatalog() {
                   </div>
 
                   {/* Metrics Bar */}
-                  <div className={`grid grid-cols-2 sm:${selectedCourse.placement_rate !== null && selectedCourse.placement_rate !== undefined && selectedCourse.placement_rate >= 30 ? 'grid-cols-4' : 'grid-cols-3'} gap-3`}>
+                  <div className="grid grid-cols-3 gap-3">
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-center">
                       <div className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase">Demand Alignment</div>
                       <div className="text-xl font-bold text-blue-700 dark:text-blue-300 mt-0.5">{selectedCourse.industry_demand_alignment}%</div>
                     </div>
-                    {selectedCourse.placement_rate !== null && selectedCourse.placement_rate !== undefined && selectedCourse.placement_rate >= 30 && (
-                      <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 text-center">
-                        <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase">Placement Track</div>
-                        <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
-                          {selectedCourse.placement_rate}%
-                        </div>
-                      </div>
-                    )}
-
                     <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 text-center">
                       <div className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold uppercase">Duration</div>
                       <div className="text-xl font-bold text-purple-700 dark:text-purple-300 mt-0.5">{selectedCourse.duration_weeks} Wks</div>
