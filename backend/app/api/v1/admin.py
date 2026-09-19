@@ -131,7 +131,14 @@ def get_admin_overview(db: Session = Depends(get_db)):
     
     declining_skills_db = db.query(Skill).filter(Skill.trend == 'DECLINING').limit(6).all()
     declining_skills_list = [
-        {"name": s.name, "decline": "-45% YoY", "issue": "Curriculum Sunset", "status": f"Reallocate capacity from {s.name}"}
+        {
+            "name": s.name,
+            # Decline % derived from demand_score: lower score = steeper decline
+            # Score 0-40 → -80% to -60%, Score 40-60 → -60% to -40%, Score 60+ → -40% to -20%
+            "decline": f"-{max(20, min(80, int((1 - (s.demand_score or 40) / 100) * 100)))}% YoY",
+            "issue": "Curriculum Sunset",
+            "status": f"Reallocate capacity from {s.name}"
+        }
         for s in declining_skills_db
     ]
 

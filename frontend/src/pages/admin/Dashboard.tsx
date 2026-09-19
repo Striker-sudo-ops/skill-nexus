@@ -138,6 +138,33 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
         { domain: 'Electronics', demand: 0, supply: 0, max: 100 },
       ];
 
+  // National Alignment = avg of (min(supply,demand)/max(supply,demand)) per domain
+  // 100% = perfectly aligned, lower = mismatched. Computed entirely from live DB data.
+  const nationalAlignment = domainStats.length > 0
+    ? Math.round(
+        domainStats
+          .map((d: any) => {
+            const demand = d.demand || 0;
+            const supply = d.supply || 0;
+            if (demand === 0 && supply === 0) return 100;
+            const hi = Math.max(demand, supply);
+            const lo = Math.min(demand, supply);
+            return hi > 0 ? (lo / hi) * 100 : 100;
+          })
+          .reduce((acc: number, v: number) => acc + v, 0) / domainStats.length
+      )
+    : 0;
+
+  // Dynamically calculate domain with the largest supply deficit (demand - supply)
+  const largestDeficitDomain = domainStats.reduce((maxDef: any, cur: any) => {
+    const diff = (cur.demand || 0) - (cur.supply || 0);
+    if (!maxDef || diff > maxDef.gap) {
+      return { domain: cur.domain, gap: diff };
+    }
+    return maxDef;
+  }, null);
+
+
   // Emerging High-Growth Skills from backend
   const emergingSkills = (data?.high_demand_skills && data.high_demand_skills.length > 0)
     ? data.high_demand_skills.slice(0, 5).map((skill: any, idx: number) => ({
@@ -430,8 +457,12 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
           </div>
 
           <div className="pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between text-[11px] text-gray-500">
-            <span>Critical supply shortage in Automotive EV &amp; Manufacturing</span>
-            <span className="text-indigo-600 dark:text-indigo-400 font-semibold">National Alignment: 74%</span>
+            <span>
+              {largestDeficitDomain && largestDeficitDomain.gap > 0
+                ? `Critical supply shortage observed in ${largestDeficitDomain.domain}`
+                : `Balanced capacity distribution across tracked technical domains`}
+            </span>
+            <span className="text-indigo-600 dark:text-indigo-400 font-semibold">National Alignment: {nationalAlignment}%</span>
           </div>
         </Card>
 
@@ -693,7 +724,7 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <div className="p-2 bg-rose-50 dark:bg-rose-900/20 rounded-xl border border-rose-100 dark:border-rose-800">
                 <div className="text-[9px] text-rose-600 dark:text-rose-400 uppercase font-semibold">Outdated</div>
                 <div className="text-xs font-bold text-rose-700 dark:text-rose-300 mt-0.5">
-                  {kpis.outdated_courses_count || 2} Flagged
+                  {(kpis.outdated_courses_count ?? 0)} Flagged
                 </div>
               </div>
             </div>
