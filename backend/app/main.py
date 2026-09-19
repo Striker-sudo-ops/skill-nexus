@@ -79,25 +79,33 @@ async def telemetry_scheduler_loop():
 
 @app.on_event('startup')
 async def startup():
-    # ── One-time purge: remove all seeded/mock courses, trainers, institutes ──
-    # Both DBs (Neon + SQLite) confirmed empty locally; this clears any live
-    # platform DB (Render/Vercel) that may still have stale mock data.
+    # ── One-time purge: remove legacy mock courses/trainers/institutes ──
+    # Guarded by a DB flag — runs ONCE, never again after that.
+    # Any courses/trainers you add manually will be safe permanently.
     try:
         from app.db.session import SessionLocal as _SL
-        from app.models.entities import Course, Trainer, TrainingInstitute, CourseEnrollment, StudentCourse, CurriculumUpdate
+        from app.models.entities import (
+            Course, Trainer, TrainingInstitute,
+            CourseEnrollment, StudentCourse, CurriculumUpdate, SystemSetting
+        )
         _db = _SL()
-        _db.query(CurriculumUpdate).delete()
-        _db.query(CourseEnrollment).delete()
-        try:
-            _db.query(StudentCourse).delete()
-        except Exception:
-            pass
-        _db.query(Course).delete()
-        _db.query(Trainer).delete()
-        _db.query(TrainingInstitute).delete()
-        _db.commit()
+        _flag = _db.query(SystemSetting).filter(SystemSetting.key == "mock_data_purged_v1").first()
+        if not _flag:
+            _db.query(CurriculumUpdate).delete()
+            _db.query(CourseEnrollment).delete()
+            try:
+                _db.query(StudentCourse).delete()
+            except Exception:
+                pass
+            _db.query(Course).delete()
+            _db.query(Trainer).delete()
+            _db.query(TrainingInstitute).delete()
+            _db.add(SystemSetting(key="mock_data_purged_v1", value="true"))
+            _db.commit()
+            print("[Startup] One-time mock data purge completed. Flag set — will not run again.")
+        else:
+            print("[Startup] Mock data already purged previously. Skipping.")
         _db.close()
-        print("[Startup] Mock courses/trainers/institutes purged from live DB.")
     except Exception as _e:
         print(f"[Startup] Purge notice: {_e}")
 
