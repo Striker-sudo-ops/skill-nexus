@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getEmployerJobs, postEmployerJob, updateEmployerJob, deleteEmployerJob, getSkills } from '../../services/api';
 import { Button, Input, Select, Spinner, useToast, Card, Badge } from '../../components/ui';
-import { Eye, Edit3, Trash2, Plus, X, Briefcase, MapPin, DollarSign, Clock, Users, CheckCircle2 } from 'lucide-react';
+import { Eye, Edit3, Trash2, Plus, X, Briefcase, MapPin, DollarSign, Clock, Users, CheckCircle2, Search, Sparkles } from 'lucide-react';
 
 const jobTypes = [
   { label: 'Full Time', value: 'FULL_TIME' },
@@ -23,6 +23,7 @@ export default function JobPostings() {
   const [loading, setLoading] = useState(true);
   
   const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState<string | number | null>(null);
   const [viewJob, setViewJob] = useState<any | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -45,6 +46,7 @@ export default function JobPostings() {
   const [form, setForm] = useState<any>(initForm);
   const [selectedSkills, setSelectedSkills] = useState<any[]>([]);
   const [skillSearch, setSkillSearch] = useState('');
+  const [customSkillInput, setCustomSkillInput] = useState('');
 
   useEffect(() => {
     fetchJobs();
@@ -63,8 +65,31 @@ export default function JobPostings() {
     setEditId(null);
     setForm(initForm);
     setSelectedSkills([]);
+    setCustomSkillInput('');
+    setSkillSearch('');
     setShowForm(true);
     setViewJob(null);
+  };
+
+  const handleAddCustomSkill = (nameOverride?: string) => {
+    const raw = (nameOverride || customSkillInput).trim();
+    if (!raw) return;
+
+    if (selectedSkills.some(s => s.name.toLowerCase() === raw.toLowerCase())) {
+      toast.error(`Skill "${raw}" is already selected`);
+      setCustomSkillInput('');
+      return;
+    }
+
+    const existing = skillsList.find(s => s.name.toLowerCase() === raw.toLowerCase());
+    if (existing) {
+      setSelectedSkills(prev => [...prev, { id: existing.id, name: existing.name, is_required: true }]);
+    } else {
+      setSelectedSkills(prev => [...prev, { id: `custom-${Date.now()}`, name: raw, is_required: true, is_custom: true }]);
+      toast.success(`Custom skill "${raw}" added. It will be registered to the skills platform when this job is posted.`);
+    }
+    setCustomSkillInput('');
+    setSkillSearch('');
   };
 
   const openEdit = (job: any) => {
@@ -87,9 +112,11 @@ export default function JobPostings() {
     // Match skills
     const mapped = (job.skills || []).map((skName: string) => {
       const found = skillsList.find(s => s.name.toLowerCase() === skName.toLowerCase());
-      return found ? { id: found.id, name: found.name, is_required: true } : null;
+      return found ? { id: found.id, name: found.name, is_required: true } : { id: `custom-${Date.now()}`, name: skName, is_required: true, is_custom: true };
     }).filter(Boolean);
     setSelectedSkills(mapped);
+    setCustomSkillInput('');
+    setSkillSearch('');
     setShowForm(true);
     setViewJob(null);
   };
@@ -111,6 +138,8 @@ export default function JobPostings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       const payload = {
         title: form.title,
@@ -125,10 +154,13 @@ export default function JobPostings() {
         openings_count: Number(form.openings_count) || 1,
         city: form.city,
         state: form.state,
-        skills: selectedSkills.map(s => ({ skill_id: s.id, is_required: s.is_required !== false }))
+        skills: selectedSkills.map(s => ({
+          skill_id: typeof s.id === 'number' ? s.id : null,
+          skill_name: s.name,
+          is_required: s.is_required !== false,
+        }))
       };
 
-      
       if (editId) {
         await updateEmployerJob(editId.toString(), payload);
         toast.success('Job posting updated successfully!');
@@ -139,8 +171,11 @@ export default function JobPostings() {
       
       setShowForm(false);
       fetchJobs();
+      getSkills().then(res => setSkillsList(res.data)).catch(() => {});
     } catch (e: any) {
       toast.error(e.message || 'Error saving job posting');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -277,22 +312,104 @@ export default function JobPostings() {
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Select Required Skills for this Role</label>
-              <Input
-                placeholder="Search skills (e.g. Python, CAN Bus, SolidWorks)..."
-                value={skillSearch}
-                onChange={(e: any) => setSkillSearch(e.target.value)}
-                className="mb-2"
-              />
-              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 mb-2 divide-y divide-gray-100">
+            <div className="space-y-3 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-gray-800">
+                  Required Skills for this Role
+                </label>
+                <span className="text-[11px] text-gray-500 font-medium">
+                  {selectedSkills.length} {selectedSkills.length === 1 ? 'skill' : 'skills'} selected
+                </span>
+              </div>
+
+              {/* Selected Skills Chips */}
+              {selectedSkills.length > 0 && (
+                <div className="flex flex-wrap gap-2 p-2.5 bg-blue-50/40 border border-blue-100 rounded-lg">
+                  {selectedSkills.map(skill => (
+                    <span
+                      key={skill.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-blue-200 text-blue-800 rounded-md text-xs font-medium shadow-2xs"
+                    >
+                      {skill.name}
+                      {skill.is_custom && (
+                        <span className="px-1.5 py-0.2 bg-purple-100 text-purple-700 rounded text-[9px] font-bold uppercase">
+                          New
+                        </span>
+                      )}
+                      <label className="flex items-center gap-1 ml-1 text-[10px] text-gray-600 font-normal cursor-pointer border-l border-blue-100 pl-1.5">
+                        <input
+                          type="checkbox"
+                          checked={skill.is_required !== false}
+                          onChange={(e) => {
+                            setSelectedSkills(selectedSkills.map(s => s.id === skill.id ? { ...s, is_required: e.target.checked } : s));
+                          }}
+                          className="rounded text-blue-600 w-3 h-3"
+                        />
+                        Req.
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSkills(selectedSkills.filter(s => s.id !== skill.id))}
+                        className="text-gray-400 hover:text-red-500 transition-colors ml-0.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Dedicated Search Bar with clear border and soft focus */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search existing skills (e.g. Python, Docker, CAD, Nursing)..."
+                  value={skillSearch}
+                  onChange={(e) => setSkillSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-lg text-xs transition-all placeholder:text-gray-400 shadow-2xs"
+                />
+              </div>
+
+              {/* Add Custom / Extra Skill Bar */}
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="text-xs text-gray-700 font-medium flex items-center gap-1.5 whitespace-nowrap">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Add Extra / Custom Skill:</span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Type any skill not listed (e.g. Kotlin, CAN Bus, Kubernetes)..."
+                  value={customSkillInput}
+                  onChange={(e) => setCustomSkillInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomSkill();
+                    }
+                  }}
+                  className="flex-1 px-3 py-1.5 bg-white border border-gray-300 hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-md text-xs placeholder:text-gray-400 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddCustomSkill()}
+                  disabled={!customSkillInput.trim()}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md text-xs font-semibold flex items-center justify-center gap-1 transition-colors whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add to Job &amp; DB
+                </button>
+              </div>
+
+              {/* Filtered Skills List */}
+              <div className="max-h-44 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50/70 divide-y divide-gray-100">
                 {skillsList
                   .filter(s => s.name?.toLowerCase().includes(skillSearch.toLowerCase()))
                   .map(skill => {
-                    const isSelected = selectedSkills.find(s => s.id === skill.id);
+                    const isSelected = selectedSkills.find(s => s.id === skill.id || s.name.toLowerCase() === skill.name.toLowerCase());
                     return (
-                      <div key={skill.id} className="flex items-center justify-between p-1.5 hover:bg-gray-100">
-                        <label className="flex items-center gap-2 text-xs text-gray-800 cursor-pointer">
+                      <div key={skill.id} className="flex items-center justify-between p-1.5 hover:bg-white rounded transition-colors">
+                        <label className="flex items-center gap-2 text-xs text-gray-800 cursor-pointer flex-1">
                           <input
                             type="checkbox"
                             checked={!!isSelected}
@@ -300,9 +417,10 @@ export default function JobPostings() {
                               if (e.target.checked) {
                                 setSelectedSkills([...selectedSkills, { id: skill.id, name: skill.name, is_required: true }]);
                               } else {
-                                setSelectedSkills(selectedSkills.filter(s => s.id !== skill.id));
+                                setSelectedSkills(selectedSkills.filter(s => s.id !== skill.id && s.name.toLowerCase() !== skill.name.toLowerCase()));
                               }
                             }}
+                            className="rounded text-blue-600 focus:ring-blue-500"
                           />
                           <span className="font-medium">{skill.name}</span>
                           <span className="text-[10px] text-gray-400 font-normal">({skill.domain})</span>
@@ -311,10 +429,11 @@ export default function JobPostings() {
                           <label className="flex items-center gap-1 text-[11px] text-gray-600 font-medium cursor-pointer">
                             <input
                               type="checkbox"
-                              checked={isSelected.is_required}
+                              checked={isSelected.is_required !== false}
                               onChange={(e) => {
-                                setSelectedSkills(selectedSkills.map(s => s.id === skill.id ? { ...s, is_required: e.target.checked } : s));
+                                setSelectedSkills(selectedSkills.map(s => (s.id === skill.id || s.name.toLowerCase() === skill.name.toLowerCase()) ? { ...s, is_required: e.target.checked } : s));
                               }}
+                              className="rounded text-blue-600 w-3 h-3"
                             />
                             Mandatory
                           </label>
@@ -322,12 +441,30 @@ export default function JobPostings() {
                       </div>
                     );
                   })}
+
+                {skillSearch.trim() && !skillsList.some(s => s.name.toLowerCase().includes(skillSearch.toLowerCase())) && (
+                  <div className="p-3 text-center space-y-2">
+                    <p className="text-xs text-gray-500">No existing skill matches &ldquo;{skillSearch}&rdquo;.</p>
+                    <button
+                      type="button"
+                      onClick={() => handleAddCustomSkill(skillSearch)}
+                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add &ldquo;{skillSearch}&rdquo; as new skill to database
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="flex gap-3 pt-3 border-t border-gray-100">
-              <Button type="submit">{editId ? 'Update Job Posting' : 'Publish Job Posting'}</Button>
-              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Publishing...' : editId ? 'Update Job Posting' : 'Publish Job Posting'}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setShowForm(false)} disabled={submitting}>
+                Cancel
+              </Button>
             </div>
           </form>
         </Card>

@@ -1,6 +1,7 @@
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc
+from sqlalchemy import or_, desc, func
 from typing import List, Optional
 from pydantic import BaseModel
 from app.db.session import get_db
@@ -78,7 +79,8 @@ def get_my_jobs(current_user: User = Depends(get_current_user), db: Session = De
     return enriched
 
 class JobSkillItem(BaseModel):
-    skill_id: int
+    skill_id: Optional[int] = None
+    skill_name: Optional[str] = None
     is_required: bool = True
 
 class JobCreateReq(BaseModel):
@@ -99,8 +101,23 @@ class JobCreateReq(BaseModel):
 @router.post('/jobs')
 def create_job(req: JobCreateReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     emp = get_employer(current_user, db)
+
+    # 1. Deduplication / Debounce: prevent duplicate jobs submitted within 15 seconds by the same employer
+    fifteen_sec_ago = datetime.utcnow() - timedelta(seconds=15)
+    existing_recent = db.query(Job).filter(
+        Job.employer_id == emp.id,
+        Job.title == req.title,
+        Job.city == req.city,
+        Job.created_at >= fifteen_sec_ago,
+    ).first()
+    if existing_recent:
+        return {"status": "already_created", "job_id": existing_recent.id}
+
+    company_name = emp.company_name or getattr(current_user, 'full_name', None) or "Employer"
     j = Job(
         employer_id=emp.id,
+        company_name=company_name,
+        source="employer",
         title=req.title,
         description=req.description,
         sector=req.sector,
@@ -116,10 +133,30 @@ def create_job(req: JobCreateReq, current_user: User = Depends(get_current_user)
         is_active=True
     )
     db.add(j)
-    db.commit()
+    db.flush()
     
     for s in req.skills:
-        db.add(JobSkill(job_id=j.id, skill_id=s.skill_id, is_required=s.is_required))
+        skill_obj = None
+        if s.skill_id:
+            skill_obj = db.query(Skill).filter(Skill.id == s.skill_id).first()
+        if not skill_obj and s.skill_name:
+            clean_name = s.skill_name.strip()
+            if clean_name:
+                skill_obj = db.query(Skill).filter(func.lower(Skill.name) == clean_name.lower()).first()
+                if not skill_obj:
+                    # Automatically add novel custom skill to the platform's skills table
+                    skill_obj = Skill(
+                        name=clean_name,
+                        domain=req.sector or "Technology",
+                        description=f"Industry-required skill for {req.title} added by employer.",
+                        demand_score=75.0,
+                        total_openings=1,
+                        trend="RISING",
+                    )
+                    db.add(skill_obj)
+                    db.flush()
+        if skill_obj:
+            db.add(JobSkill(job_id=j.id, skill_id=skill_obj.id, is_required=s.is_required))
     db.commit()
     return {"status": "created", "job_id": j.id}
 
@@ -143,11 +180,29 @@ def update_job(id: int, req: JobCreateReq, current_user: User = Depends(get_curr
     j.city = req.city
     j.state = req.state
 
-    
     if req.skills:
         db.query(JobSkill).filter(JobSkill.job_id == j.id).delete()
         for s in req.skills:
-            db.add(JobSkill(job_id=j.id, skill_id=s.skill_id, is_required=s.is_required))
+            skill_obj = None
+            if s.skill_id:
+                skill_obj = db.query(Skill).filter(Skill.id == s.skill_id).first()
+            if not skill_obj and s.skill_name:
+                clean_name = s.skill_name.strip()
+                if clean_name:
+                    skill_obj = db.query(Skill).filter(func.lower(Skill.name) == clean_name.lower()).first()
+                    if not skill_obj:
+                        skill_obj = Skill(
+                            name=clean_name,
+                            domain=req.sector or "Technology",
+                            description=f"Industry-required skill for {req.title} added by employer.",
+                            demand_score=75.0,
+                            total_openings=1,
+                            trend="RISING",
+                        )
+                        db.add(skill_obj)
+                        db.flush()
+            if skill_obj:
+                db.add(JobSkill(job_id=j.id, skill_id=skill_obj.id, is_required=s.is_required))
             
     db.commit()
     return {"status": "updated", "id": j.id}
