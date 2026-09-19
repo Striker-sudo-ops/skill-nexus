@@ -142,9 +142,17 @@ export default function DistrictIntelligence() {
                         <td className="py-3 px-3 text-gray-700">{(d.current_capacity || 0).toLocaleString()}</td>
                         <td className="py-3 px-3">
                           <span className={`inline-flex items-center gap-1 font-bold text-xs px-2 py-0.5 rounded-md ${
-                            isShortage ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700'
+                            d.status === 'CRITICAL_SHORTAGE' || d.status === 'HIGH_DEMAND' || d.shortage_deficit > 0
+                              ? 'bg-red-50 text-red-700 border border-red-200'
+                              : d.status === 'BALANCED' || d.shortage_deficit === 0
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                           }`}>
-                            {isShortage ? `+${(d.shortage_deficit || 0).toLocaleString()} Shortage` : `${(d.shortage_deficit || 0).toLocaleString()} Oversupply`}
+                            {d.shortage_deficit > 0
+                              ? `+${d.shortage_deficit.toLocaleString()} Deficit`
+                              : d.shortage_deficit === 0 || d.status === 'BALANCED'
+                              ? 'Balanced (0)'
+                              : `${Math.abs(d.shortage_deficit).toLocaleString()} Surplus`}
                           </span>
                         </td>
                         <td className="py-3 px-3 font-medium text-gray-800">{d.top_demand_skill}</td>

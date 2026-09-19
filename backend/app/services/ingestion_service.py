@@ -895,18 +895,18 @@ NCVT_ITI_SEATS: Dict[str, int] = {
 }
 # Total ≈ 169,800 seats across 10 major Maharashtra districts (NCVT 2023-24)
 
-# Sector + primary skill defaults + MSDE Maharashtra baseline demand factor (1.0 = balanced, >1.15 = shortage)
+# Contextual domain profile fallbacks when district has minimal live vacancy postings
 CITY_SECTOR_DEFAULTS: Dict[str, tuple] = {
-    "pune":        ("IT and Automotive",               "Python",             96.2, 1.42),
-    "mumbai":      ("BFSI, FinTech and IT",            "SQL",                94.8, 1.45),
-    "thane":       ("IT, Chemicals and Healthcare",     "Clinical Nursing",   90.2, 1.35),
-    "nagpur":      ("Automotive and Heavy Engineering", "Battery Management", 91.5, 1.25),
-    "nashik":      ("Electrical and Automation",        "PLC Programming",    88.0, 1.20),
-    "aurangabad":  ("Manufacturing and Robotics",       "SolidWorks",         89.4, 1.15),
-    "kolhapur":    ("Foundry, Precision Tooling",       "AutoCAD",            85.6, 1.05),
-    "solapur":     ("Textile, Civil and MSME",          "Concrete Technology",82.1, 0.98),
-    "amravati":    ("Agro-Tech and Renewable Energy",   "Power Systems",      79.5, 0.92),
-    "nanded":      ("Healthcare and Services",          "Patient Care",       77.0, 0.82),
+    "pune":        ("IT and Automotive",               "Python"),
+    "mumbai":      ("BFSI, FinTech and IT",            "SQL"),
+    "thane":       ("IT, Chemicals and Healthcare",     "Clinical Nursing"),
+    "nagpur":      ("Automotive and Heavy Engineering", "Battery Management"),
+    "nashik":      ("Electrical and Automation",        "PLC Programming"),
+    "aurangabad":  ("Manufacturing and Robotics",       "SolidWorks"),
+    "kolhapur":    ("Foundry, Precision Tooling",       "AutoCAD"),
+    "solapur":     ("Textile, Civil and MSME",          "Concrete Technology"),
+    "amravati":    ("Agro-Tech and Renewable Energy",   "Power Systems"),
+    "nanded":      ("Healthcare and Services",          "Patient Care"),
 }
 
 
@@ -1013,29 +1013,49 @@ def sync_district_intelligence_from_jobs(db: Session) -> int:
 
     total_national_capacity = sum(iti_seats.values())   # ~169,800 seats
 
-    # ── Step 2: Per-district loop ─────────────────────────────────────────────
+    # ── Step 2: Per-district mathematical workforce equilibrium model ─────────
+    # Total state-level active vacancy volume from actual ingested jobs
+    total_openings_state = sum(
+        (j.openings_count or 1) for j in active_jobs
+    )
+    total_openings_state = max(total_openings_state, 1)
+
     for city_obj in MH_CITIES:
         city     = city_obj["city"]
         city_key = city.lower()
         jobs     = city_jobs.get(city_key, [])
 
-        defaults       = CITY_SECTOR_DEFAULTS.get(
-            city_key, ("General Engineering", "Python", 80.0, 1.0)
+        defaults = CITY_SECTOR_DEFAULTS.get(
+            city_key, ("General Engineering", "Python")
         )
-        default_sector, default_skill, default_index, baseline_factor = defaults
+        default_sector, default_skill = defaults
 
         # Real ITI training capacity for this district
         training_capacity = iti_seats.get(city_key, 10000)
 
+        # 1. District active job metrics from real telemetry
+        district_openings = sum((j.openings_count or 1) for j in jobs) if jobs else 0
+        job_share = district_openings / total_openings_state
+        capacity_share = training_capacity / max(total_national_capacity, 1)
+
+        # 2. Mathematical Demand Intensity Ratio:
+        # Ratio of regional job opportunities to regional graduate output capacity.
+        # If job_share == capacity_share -> intensity = 1.0 (Exact Equilibrium)
+        # If job_share > capacity_share  -> intensity > 1.0 (Deficit: more demand than supply)
+        # If job_share < capacity_share  -> intensity < 1.0 (Surplus: training exceeds local hiring)
+        if district_openings > 0:
+            raw_intensity = job_share / max(capacity_share, 0.0001)
+            # Bound relative intensity mathematically to avoid extreme single-day sample swings [0.65 to 1.55]
+            demand_intensity = max(0.65, min(raw_intensity, 1.55))
+        else:
+            demand_intensity = 1.0
+
+        demand_index = round(min(demand_intensity * 65.0 + 20.0, 99.0), 1)
+
         if len(jobs) >= 2:
             sectors = [j.sector for j in jobs if j.sector]
             job_ids = [j.id for j in jobs]
-
             primary_sector = Counter(sectors).most_common(1)[0][0] if sectors else default_sector
-            # Live job market surge bonus (up to +30% based on active job volume)
-            job_surge = min(len(jobs) / 15.0, 0.30)
-            demand_multiplier = baseline_factor * (1.0 + job_surge)
-            demand_index = round(min(demand_multiplier / 1.5 * 100, 99.0), 1)
 
             top_skill_row = (
                 db.query(Skill.name, func.count(JobSkill.id).label("cnt"))
@@ -1046,46 +1066,47 @@ def sync_district_intelligence_from_jobs(db: Session) -> int:
                 .first()
             )
             top_skill = top_skill_row[0] if top_skill_row else default_skill
-            industry_demand = int(training_capacity * demand_multiplier)
-
         else:
-            # Data-sparse district: baseline economic demand factor from MSDE reports
-            primary_sector  = default_sector
-            demand_index    = float(default_index)
-            top_skill       = default_skill
-            industry_demand = int(training_capacity * baseline_factor)
+            primary_sector = default_sector
+            top_skill      = default_skill
 
-        # ── Step 3: Coverage-ratio classification ─────────────────────────────
-        # coverage_ratio < 1.0  → training lags demand (shortage)
-        # coverage_ratio > 1.0  → training exceeds demand (oversupply)
+        # 3. Mathematical Industry Demand (Recommended Target Seats):
+        # Target = Training Capacity * Demand Intensity
+        industry_demand = int(round(training_capacity * demand_intensity))
+
+        # 4. Coverage Ratio & Signed Skills Gap:
+        # coverage_ratio > 1.05 -> Surplus (Colleges produce more than local industry absorbs)
+        # coverage_ratio < 0.95 -> Shortage (Industry needs more than current intake)
+        # 0.95 <= coverage_ratio <= 1.05 -> Balanced
         coverage_ratio = training_capacity / max(industry_demand, 1)
-        deficit        = industry_demand - training_capacity  # signed: + shortage, − surplus
+        deficit = industry_demand - training_capacity  # signed: positive = deficit, negative = surplus
 
-        if coverage_ratio < 0.75:
-            status             = "CRITICAL_SHORTAGE"
-            recommended_seats  = int(industry_demand * 1.12)
+        if coverage_ratio < 0.85:
+            status = "CRITICAL_SHORTAGE"
+            recommended_seats = industry_demand
             recommended_action = (
-                f"Urgently add {abs(deficit):,} new training seats in {primary_sector}"
+                f"Deficit of {abs(deficit):,} seats: Expand intake in {primary_sector} to meet hiring demand"
             )
-        elif coverage_ratio < 0.92:
-            status             = "HIGH_DEMAND"
-            recommended_seats  = int(industry_demand * 1.05)
+        elif coverage_ratio < 0.95:
+            status = "HIGH_DEMAND"
+            recommended_seats = industry_demand
             recommended_action = (
-                f"Expand vocational intake in {primary_sector} by {abs(deficit):,} seats"
+                f"Moderate deficit of {abs(deficit):,} seats: Increase admissions in {primary_sector}"
             )
         elif coverage_ratio <= 1.08:
-            status             = "BALANCED"
-            recommended_seats  = industry_demand
-            recommended_action = f"Maintain stable capacity in {primary_sector}"
+            status = "BALANCED"
+            recommended_seats = training_capacity
+            deficit = 0
+            recommended_action = f"Market in balance: Maintain stable intake in {primary_sector}"
         else:
-            status             = "OVERSUPPLY"
-            surplus            = training_capacity - industry_demand
-            recommended_seats  = int(industry_demand * 0.95)
+            status = "OVERSUPPLY"
+            surplus = training_capacity - industry_demand
+            recommended_seats = industry_demand
             recommended_action = (
-                f"Pivot surplus {surplus:,} seats away from {primary_sector} into rising tech"
+                f"Surplus of {surplus:,} seats: Modernize curriculum in {primary_sector} toward high-demand trades"
             )
 
-        # ── Step 4: Upsert DistrictIntelligence record ────────────────────────
+        # ── Step 5: Upsert DistrictIntelligence record ────────────────────────
         existing = db.query(DistrictIntelligence).filter(
             DistrictIntelligence.district == city,
             DistrictIntelligence.state    == "Maharashtra",
@@ -1118,13 +1139,14 @@ def sync_district_intelligence_from_jobs(db: Session) -> int:
 def ensure_district_intelligence(db: Session) -> int:
     """
     Guarantees DistrictIntelligence table is populated and reflects the updated
-    NCVT / data.gov.in ITI capacity (~169,900 seats) instead of obsolete 321,000 baseline.
+    mathematical workforce equilibrium model (real ITI capacity + dynamic job-intensity demand).
     Executes in <50ms without waiting for external web scrapers.
     """
     total_cap = db.query(func.sum(DistrictIntelligence.current_capacity)).scalar() or 0
-    # If unseeded or still holding obsolete 321,000 baseline:
-    if total_cap == 0 or total_cap >= 300000:
-        logger.info(f"[DistrictIntelligence] Refreshing district table (previous total: {total_cap})...")
+    total_rec = db.query(func.sum(DistrictIntelligence.recommended_seats)).scalar() or 0
+    # If unseeded or still holding obsolete hardcoded multiplier baseline (>250,000 recommended):
+    if total_cap == 0 or total_rec >= 250000:
+        logger.info(f"[DistrictIntelligence] Recalculating mathematical district intelligence (capacity: {total_cap}, recommended: {total_rec})...")
         return sync_district_intelligence_from_jobs(db)
     return 0
 
