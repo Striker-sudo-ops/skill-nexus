@@ -3,7 +3,7 @@ import { getAdminOverview, exportReport, syncLiveTelemetry, wipeTelemetry, getLa
 import { Card, Spinner } from '../../components/ui';
 import { 
   Users, BookOpen, School, Building2, TrendingUp, TrendingDown,
-  ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle2,
+  ArrowDownRight, AlertTriangle, CheckCircle2,
   Download, ShieldCheck, MapPin, ChevronRight, Activity, Award,
   Sparkles, Layers, RefreshCw, Trash2, Globe
 } from 'lucide-react';
@@ -289,13 +289,9 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <Users className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1 flex items-baseline justify-between">
+          <div className="mt-1">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
               {(kpis.total_students ?? 0).toLocaleString()}
-            </div>
-            <div className="flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>+12%</span>
             </div>
           </div>
         </Card>
@@ -308,13 +304,9 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <BookOpen className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1 flex items-baseline justify-between">
+          <div className="mt-1">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
               {(kpis.total_courses ?? 0).toLocaleString()}
-            </div>
-            <div className="flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>+8%</span>
             </div>
           </div>
         </Card>
@@ -327,13 +319,9 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <School className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1 flex items-baseline justify-between">
+          <div className="mt-1">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
               {(kpis.total_trainers ?? 0).toLocaleString()}
-            </div>
-            <div className="flex items-center text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-              <Activity className="w-3 h-3" />
-              <span>{kpis.trainers_needing_upskilling || 0} upskill</span>
             </div>
           </div>
         </Card>
@@ -346,13 +334,9 @@ export default function AdminDashboard({ navigate }: { navigate: (page: string) 
               <Building2 className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1 flex items-baseline justify-between">
+          <div className="mt-1">
             <div className="text-xl font-bold text-gray-900 dark:text-white">
               {(kpis.total_enrollments ?? 0).toLocaleString()}
-            </div>
-            <div className="flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-              <TrendingUp className="w-3 h-3" />
-              <span>Active</span>
             </div>
           </div>
         </Card>
