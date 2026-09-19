@@ -270,7 +270,7 @@ def _upsert_job(
             existing.salary_min = salary_min
         if salary_max is not None:
             existing.salary_max = salary_max
-        db.commit()
+        # ⚡ NO per-row commit — caller does one batch commit for all jobs in source
         return False
 
     new_job = Job(
@@ -285,17 +285,15 @@ def _upsert_job(
         city=city, state=state or "Maharashtra",
         latitude=lat, longitude=lng, is_active=True,
     )
-    db.add(new_job); db.commit(); db.refresh(new_job)
+    db.add(new_job)
+    # flush to assign new_job.id without committing the transaction
+    db.flush()
 
     for skill_name in matched_skills:
         skill = db_skills.get(skill_name)
         if skill:
-            exists = db.query(JobSkill).filter(
-                JobSkill.job_id == new_job.id, JobSkill.skill_id == skill.id
-            ).first()
-            if not exists:
-                db.add(JobSkill(job_id=new_job.id, skill_id=skill.id, is_required=True))
-    db.commit()
+            db.add(JobSkill(job_id=new_job.id, skill_id=skill.id, is_required=True))
+    # ⚡ NO per-row commit — caller does one batch commit for all jobs in source
     return True
 
 
@@ -371,6 +369,11 @@ def fetch_adzuna_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
                 logger.warning(f"[Adzuna] {city} p{page}: {e}")
                 break
 
+    # ⚡ Single batch commit for all Adzuna jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -438,6 +441,11 @@ def fetch_jooble_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
                 logger.warning(f"[Jooble] '{term}' p{page}: {e}")
                 break
 
+    # ⚡ Single batch commit for all Jooble jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -487,6 +495,11 @@ def fetch_remotive_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
         except Exception as e:
             logger.warning(f"[Remotive] {cat}: {e}")
 
+    # ⚡ Single batch commit for all Remotive jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -531,6 +544,11 @@ def fetch_jobicy_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
     except Exception as e:
         logger.warning(f"[Jobicy] {e}")
 
+    # ⚡ Single batch commit for all Jobicy jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -580,6 +598,12 @@ def fetch_indgovtjobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
                 count += 1
     except Exception as e:
         logger.warning(f"[IndGovtJobs] Error: {e}")
+
+    # ⚡ Single batch commit for all IndGovtJobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -631,6 +655,12 @@ def fetch_freejobalert(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
                 count += 1
     except Exception as e:
         logger.warning(f"[FreeJobAlert] Error: {e}")
+
+    # ⚡ Single batch commit for all FreeJobAlert jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -674,6 +704,12 @@ def fetch_remoteok_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
                 count += 1
     except Exception as e:
         logger.warning(f"[RemoteOK] Error: {e}")
+
+    # ⚡ Single batch commit for all RemoteOK jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -743,6 +779,11 @@ def scrape_ncs_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> int:
         except Exception as e:
             logger.info(f"[NCS] {term}: {e}")
 
+    # ⚡ Single batch commit for all NCS jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -817,6 +858,11 @@ def scrape_mahaswayam_jobs(db: Session, db_skills: Dict, sync_ts: datetime) -> i
         except Exception as e:
             logger.info(f"[Mahaswayam] {endpoint}: {e}")
 
+    # ⚡ Single batch commit for all Mahaswayam jobs
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return count
 
 
@@ -838,18 +884,22 @@ _SKILL_TOPICS = {
 def fetch_github_skill_trends(db: Session) -> Dict:
     since   = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
     results = {}
+    skills_by_name = {s.name: s for s in db.query(Skill).all()}
     for skill_name, topic in _SKILL_TOPICS.items():
         try:
             r = requests.get(
                 "https://api.github.com/search/repositories",
                 params={"q": f"topic:{topic} created:>{since}", "sort": "updated", "per_page": 1},
                 headers={"Accept": "application/vnd.github+json", "User-Agent": "SkillNexus/2.0"},
-                timeout=5,
+                timeout=3,
             )
+            if r.status_code in (403, 429):
+                logger.info(f"[GitHub Trends] Rate limit reached at topic '{topic}' — stopping further calls.")
+                break
             if r.status_code == 200:
                 total = r.json().get("total_count", 0)
                 results[skill_name] = total
-                skill = db.query(Skill).filter(Skill.name == skill_name).first()
+                skill = skills_by_name.get(skill_name)
                 if skill:
                     if total > 5000:
                         skill.trend        = "HOT"
@@ -863,14 +913,14 @@ def fetch_github_skill_trends(db: Session) -> Dict:
                         skill.trend = "STABLE"
             else:
                 results[skill_name] = 100
-            time.sleep(0.15)
+            time.sleep(0.05)
         except Exception:
             results[skill_name] = 100
             continue
     try:
         db.commit()
     except Exception:
-        pass
+        db.rollback()
     return results
 
 

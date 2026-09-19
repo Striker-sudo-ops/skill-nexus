@@ -118,7 +118,7 @@ export const updateEnrollmentStatus = (id: number, status: string) => api.put(`/
 export const getCurriculumUpdates = () => api.get('/admin/curriculum-updates');
 export const actionCurriculumUpdate = (id: number, action: string) => api.post(`/admin/curriculum-updates/${id}/action`, { action });
 export const exportReport = () => api.get('/admin/export-report', { responseType: 'blob' });
-export const syncLiveTelemetry = () => api.post('/admin/sync-live-data');
+export const syncLiveTelemetry = () => api.post('/admin/sync-live-data', {}, { timeout: 180000 });
 export const wipeTelemetry = () => api.post('/admin/wipe-telemetry');
 export const getLastSync = () => api.get('/admin/last-sync');
 export const getDistrictAIStrategy = (districtId: number) => api.get(`/admin/districts/${districtId}/ai-strategy`);

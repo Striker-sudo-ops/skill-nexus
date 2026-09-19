@@ -47,52 +47,37 @@ def get_admin_overview(db: Session = Depends(get_db)):
         "Concrete Technology": ("Infrastructure QC Engineer",       "Civil Engineering"),
     }
 
+    avg_skill_score = float(db.query(func.avg(Skill.demand_score)).scalar() or 60.0)
+
     hot_skills = (
         db.query(Skill)
-        .filter(Skill.trend.in_(["HOT", "RISING"]))
         .order_by(desc(Skill.demand_score))
         .limit(5)
         .all()
     )
     growing_roles = []
     for s in hot_skills:
-        role_title, sector = _SKILL_TO_ROLE.get(s.name, (f"{s.name} Specialist", s.domain or "Cross-Sector"))
-        score = s.demand_score or 80.0
-        growth_pct = max(15, min(int(score - 60), 65))
-        growing_roles.append({"role": role_title, "sector": sector, "growth": f"+{growth_pct}% YoY"})
+        score = float(s.demand_score or 0.0)
+        if score > 0:
+            role_title, sector = _SKILL_TO_ROLE.get(s.name, (f"{s.name} Specialist", s.domain or "Technology"))
+            # Mathematically computed percentage relative to average skill demand score
+            growth_pct = max(5, round(((score - avg_skill_score) / avg_skill_score) * 100)) if score >= avg_skill_score else max(5, round((score / 100.0) * 40))
+            growing_roles.append({"role": role_title, "sector": sector, "growth": f"+{growth_pct}% YoY"})
 
-    # Fallback if GitHub sync hasn't run yet
-    if not growing_roles:
-        growing_roles = [
-            {"role": "EV Battery Integration Specialist",  "sector": "Automotive EV",       "growth": "+42% YoY"},
-            {"role": "Industrial Robotics Cell Engineer",  "sector": "Robotics & Industry 4.0","growth": "+38% YoY"},
-            {"role": "Edge AI Inference Architect",        "sector": "Artificial Intelligence","growth": "+54% YoY"},
-            {"role": "Microgrid Solar Project Engineer",   "sector": "Renewable Energy",     "growth": "+29% YoY"},
-            {"role": "Telemetry Biomedical Technologist",  "sector": "Healthcare",           "growth": "+31% YoY"},
-        ]
-
-    # ── Dynamic declining roles from DECLINING-trend skills ──────────────────
     declining_trend_skills = (
         db.query(Skill)
-        .filter(Skill.trend == "DECLINING")
-        .order_by(Skill.demand_score)
+        .order_by(Skill.demand_score.asc())
         .limit(5)
         .all()
     )
     declining_roles = []
     for s in declining_trend_skills:
-        role_title, sector = _SKILL_TO_ROLE.get(s.name, (f"Traditional {s.name} Operator", s.domain or "Legacy"))
-        score = s.demand_score or 45.0
-        decline_pct = max(30, min(int(90 - score), 80))
-        declining_roles.append({"role": role_title, "sector": sector, "growth": f"-{decline_pct}% YoY"})
-
-    if not declining_roles:
-        declining_roles = [
-            {"role": "2D Manual Drafting Blueprint Tracer",   "sector": "Legacy Mechanical", "growth": "-68% YoY"},
-            {"role": "Standalone Data Entry Clerk",           "sector": "Administration",    "growth": "-74% YoY"},
-            {"role": "Scripted Telecalling Representative",   "sector": "BPO Operations",    "growth": "-48% YoY"},
-            {"role": "Legacy Server Room Tape Operator",      "sector": "Legacy IT",         "growth": "-62% YoY"},
-        ]
+        score = float(s.demand_score or 0.0)
+        if score > 0 and score < avg_skill_score:
+            role_title, sector = _SKILL_TO_ROLE.get(s.name, (f"Traditional {s.name} Technician", s.domain or "General"))
+            # Mathematically computed decline percentage relative to average skill demand score
+            decline_pct = max(5, round(((avg_skill_score - score) / avg_skill_score) * 100))
+            declining_roles.append({"role": role_title, "sector": sector, "growth": f"-{decline_pct}% YoY"})
 
 
     total_courses = db.query(Course).count()
