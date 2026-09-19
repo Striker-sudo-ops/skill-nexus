@@ -193,6 +193,43 @@ def get_district_intelligence(
         }
     }
 
+@router.get('/districts/{district_id}/ai-strategy')
+def get_district_ai_strategy(district_id: int, db: Session = Depends(get_db)):
+    d = db.query(DistrictIntelligence).filter(DistrictIntelligence.id == district_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="District intelligence record not found")
+    
+    from app.models.entities import Job
+    from app.services.ai_service import generate_ai_district_strategy
+
+    active_job_count = db.query(Job).filter(
+        Job.city.ilike(d.district), Job.state == "Maharashtra", Job.is_active == True
+    ).count()
+
+    strategy = generate_ai_district_strategy(
+        district=d.district,
+        primary_sector=d.primary_sector or "General Engineering",
+        current_capacity=d.current_capacity or 10000,
+        recommended_seats=d.recommended_seats or 10000,
+        shortage_deficit=d.shortage_deficit or 0,
+        top_skill=d.top_demand_skill or "Python",
+        job_count=active_job_count,
+        demand_index=d.demand_index or 80.0,
+    )
+
+    return {
+        "district": d.district,
+        "state": d.state,
+        "primary_sector": d.primary_sector,
+        "current_capacity": d.current_capacity,
+        "recommended_seats": d.recommended_seats,
+        "shortage_deficit": d.shortage_deficit,
+        "top_demand_skill": d.top_demand_skill,
+        "demand_index": d.demand_index,
+        "active_jobs_count": active_job_count,
+        "ai_strategy": strategy
+    }
+
 # ─── Skills (Admin CRUD) ─────────────────────────────────────────────────────
 
 class SkillCreate(BaseModel):

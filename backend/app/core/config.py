@@ -2,14 +2,28 @@ import os
 from typing import List
 from pydantic_settings import BaseSettings
 
-# Establish absolute path to database in project root
+# Establish absolute path to database in project root (local dev only)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
 SQLITE_DB = f"sqlite:///{os.path.join(BASE_DIR, 'ssitap.db').replace(os.sep, '/')}"
 NEON_DB = "postgresql://neondb_owner:npg_DHRas15nlFPk@ep-winter-waterfall-b3sh513r-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# In cloud/serverless environment (Vercel/Lambda), always use persistent Neon PostgreSQL.
-# In local development, default to SQLite unless DATABASE_URL is explicitly set.
-if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+# Cloud environment detection:
+# - Vercel / AWS Lambda → Neon PostgreSQL (persistent)
+# - Render → DATABASE_URL injected from render.yaml → Render PostgreSQL
+# - Any other cloud (PORT env set, no local marker) → Neon PostgreSQL as safe fallback
+# - Local dev only (no cloud markers) → SQLite for convenience
+_is_cloud = (
+    os.getenv("VERCEL")
+    or os.getenv("AWS_LAMBDA_FUNCTION_NAME")
+    or os.getenv("RENDER")
+    or os.getenv("RAILWAY_ENVIRONMENT")
+    or os.getenv("PORT")  # Any cloud sets PORT; local dev typically doesn't
+)
+
+if _is_cloud:
+    # On Render, DATABASE_URL is injected from render.yaml (Render PostgreSQL).
+    # On Vercel, there's no DATABASE_URL, so we fall back to Neon.
+    # Either way, we NEVER use SQLite in cloud.
     DEFAULT_DB = NEON_DB
 else:
     DEFAULT_DB = SQLITE_DB
@@ -26,6 +40,7 @@ class Settings(BaseSettings):
     ADZUNA_APP_KEY: str = os.getenv("ADZUNA_APP_KEY", "")
     JOOBLE_API_KEY: str = os.getenv("JOOBLE_API_KEY", "")
     DATA_GOV_API_KEY: str = os.getenv("DATA_GOV_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     # Dual database support: defaults to persistent Neon in cloud, easily overridden
     DATABASE_URL: str = os.getenv("DATABASE_URL", DEFAULT_DB)

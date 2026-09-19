@@ -121,6 +121,7 @@ export const exportReport = () => api.get('/admin/export-report', { responseType
 export const syncLiveTelemetry = () => api.post('/admin/sync-live-data');
 export const wipeTelemetry = () => api.post('/admin/wipe-telemetry');
 export const getLastSync = () => api.get('/admin/last-sync');
+export const getDistrictAIStrategy = (districtId: number) => api.get(`/admin/districts/${districtId}/ai-strategy`);
 export const getSourceStats = () => api.get('/admin/source-stats');
 export const getAdminSkills = (params?: any) => api.get('/admin/skills', { params });
 export const createAdminSkill = (data: any) => api.post('/admin/skills', data);
