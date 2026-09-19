@@ -6,7 +6,7 @@ from app.db.seed_data import seed
 from app.models import entities
 from app.api.v1 import auth, students, employers, skills, jobs, quiz, admin, courses, trainer, messages, suggestions, feedback
 
-app = FastAPI(title='Skill Nexus API', version='2.0.0')
+app = FastAPI(title='Skill Nexus API', version='2.0.1')  # force redeploy: DB purged, no mock courses
 
 app.add_middleware(
     CORSMiddleware,
@@ -79,6 +79,28 @@ async def telemetry_scheduler_loop():
 
 @app.on_event('startup')
 async def startup():
+    # ── One-time purge: remove all seeded/mock courses, trainers, institutes ──
+    # Both DBs (Neon + SQLite) confirmed empty locally; this clears any live
+    # platform DB (Render/Vercel) that may still have stale mock data.
+    try:
+        from app.db.session import SessionLocal as _SL
+        from app.models.entities import Course, Trainer, TrainingInstitute, CourseEnrollment, StudentCourse, CurriculumUpdate
+        _db = _SL()
+        _db.query(CurriculumUpdate).delete()
+        _db.query(CourseEnrollment).delete()
+        try:
+            _db.query(StudentCourse).delete()
+        except Exception:
+            pass
+        _db.query(Course).delete()
+        _db.query(Trainer).delete()
+        _db.query(TrainingInstitute).delete()
+        _db.commit()
+        _db.close()
+        print("[Startup] Mock courses/trainers/institutes purged from live DB.")
+    except Exception as _e:
+        print(f"[Startup] Purge notice: {_e}")
+
     seed()
     # On serverless platforms like Vercel, background tasks cause 504 invocation timeouts.
     # Telemetry scraping runs safely in persistent environments or on explicit admin demand.
