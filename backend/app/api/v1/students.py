@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.entities import (
@@ -177,18 +178,32 @@ def delete_education(edu_id: int, current_user: User = Depends(get_current_user)
     return {"status": "deleted"}
 
 class SkillItem(BaseModel):
-    skill_id: int
-    proficiency: str
+    skill_id: Optional[int] = None
+    skill_name: Optional[str] = None
+    proficiency: Optional[str] = "INTERMEDIATE"
 
 @router.post('/skills')
 def update_skills(req: List[SkillItem], current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     stu = get_student(current_user, db)
     db.query(StudentSkill).filter(StudentSkill.student_id == stu.id).delete()
+    added_ids = set()
     for item in req:
-        db.add(StudentSkill(student_id=stu.id, skill_id=item.skill_id, proficiency=item.proficiency))
+        target_id = item.skill_id
+        if not target_id and item.skill_name:
+            clean = item.skill_name.strip()
+            if clean:
+                sk = db.query(Skill).filter(func.lower(Skill.name) == clean.lower()).first()
+                if not sk:
+                    sk = Skill(name=clean, domain="Technical", demand_score=75.0, total_openings=1, trend="RISING")
+                    db.add(sk)
+                    db.flush()
+                target_id = sk.id
+        if target_id and target_id not in added_ids:
+            db.add(StudentSkill(student_id=stu.id, skill_id=target_id, proficiency=item.proficiency or "INTERMEDIATE"))
+            added_ids.add(target_id)
     stu.profile_complete_pct = min(100.0, stu.profile_complete_pct + 10.0)
     db.commit()
-    return {"status": "updated"}
+    return {"status": "updated", "skills_count": len(added_ids)}
 
 @router.post('/interests')
 def update_interests(domains: List[str], current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -250,29 +265,47 @@ def add_certificate(req: CertificateItem, current_user: User = Depends(get_curre
     return {"status": "certificate_added"}
 
 def sync_all_skills_internal(student_id: int, db: Session):
-    """AI engine automatically combines all skills from completed courses, certificates, and self-additions"""
+    """AI engine automatically combines all skills from completed courses, certificates, resume, and self-additions"""
     courses = db.query(StudentCourse).filter(StudentCourse.student_id == student_id).all()
     certs = db.query(StudentCertificate).filter(StudentCertificate.student_id == student_id).all()
+    resume = db.query(StudentResume).filter(StudentResume.student_id == student_id).first()
     
     all_gained = set()
     for c in courses:
         if c.gained_skills:
             for s in c.gained_skills.split(','):
-                all_gained.add(s.strip())
+                if s.strip():
+                    all_gained.add(s.strip())
                 
     for cr in certs:
         if cr.gained_skills:
             for s in cr.gained_skills.split(','):
-                all_gained.add(s.strip())
+                if s.strip():
+                    all_gained.add(s.strip())
                 
     existing_skills = {ss.skill_id for ss in db.query(StudentSkill).filter(StudentSkill.student_id == student_id).all()}
     
     for skill_name in all_gained:
-        sk = db.query(Skill).filter(Skill.name.ilike(skill_name)).first()
-        if sk and sk.id not in existing_skills:
+        clean = skill_name.strip()
+        if not clean:
+            continue
+        sk = db.query(Skill).filter(func.lower(Skill.name) == clean.lower()).first()
+        if not sk:
+            sk = Skill(name=clean, domain="Technical", demand_score=75.0, total_openings=1, trend="RISING")
+            db.add(sk)
+            db.flush()
+        if sk.id not in existing_skills:
             db.add(StudentSkill(student_id=student_id, skill_id=sk.id, proficiency="INTERMEDIATE"))
             existing_skills.add(sk.id)
             
+    # Also extract skills from uploaded resume if available
+    if resume and resume.raw_text:
+        extracted = resume_parse(resume.raw_text, db)
+        for sk_id in extracted.get("skills", []):
+            if sk_id not in existing_skills:
+                db.add(StudentSkill(student_id=student_id, skill_id=sk_id, proficiency="INTERMEDIATE"))
+                existing_skills.add(sk_id)
+
     db.commit()
 
 @router.post('/sync-skills')
@@ -303,6 +336,20 @@ async def parse_resume(file: UploadFile = File(...), current_user: User = Depend
     db.commit()
     
     extracted = resume_parse(text, db)
+    
+    # Automatically persist parsed skills into StudentSkill table
+    if extracted.get("skills"):
+        existing_skills = {ss.skill_id for ss in db.query(StudentSkill).filter(StudentSkill.student_id == stu.id).all()}
+        added_count = 0
+        for sk_id in extracted["skills"]:
+            if sk_id not in existing_skills:
+                db.add(StudentSkill(student_id=stu.id, skill_id=sk_id, proficiency="INTERMEDIATE"))
+                existing_skills.add(sk_id)
+                added_count += 1
+        if added_count > 0:
+            stu.profile_complete_pct = min(100.0, stu.profile_complete_pct + 10.0)
+            db.commit()
+
     return extracted
 
 @router.get('/skill-gap/{job_id}')

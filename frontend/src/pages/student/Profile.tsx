@@ -31,6 +31,7 @@ export default function Profile({ navigate }: ProfileProps) {
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<any[]>([]);
   const [skillSearch, setSkillSearch] = useState('');
+  const [customSkillInput, setCustomSkillInput] = useState('');
   
   const [domains, setDomains] = useState<string[]>([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
@@ -71,7 +72,11 @@ export default function Profile({ navigate }: ProfileProps) {
       if (p.locations?.length) setLocations(p.locations);
       if (p.education?.length) setEducationList(p.education);
       else setEducationList([{ degree: '', field_of_study: '', institution: '', graduation_year: '' }]);
-      if (p.skills) setSelectedSkills(p.skills.map((s: any) => ({ skill_id: s.skill_id || s.id, proficiency: s.proficiency || 'BEGINNER' })));
+      if (p.skills) setSelectedSkills(p.skills.map((s: any) => ({
+        skill_id: s.skill_id || s.id,
+        skill_name: s.name || '',
+        proficiency: s.proficiency || 'BEGINNER'
+      })));
       if (p.interests) setSelectedDomains(p.interests);
       if (p.completed_courses) setCompletedCourses(p.completed_courses);
       if (p.certificates) setCertificates(p.certificates);
@@ -89,13 +94,48 @@ export default function Profile({ navigate }: ProfileProps) {
     loadProfile();
   }, []);
 
+  const getSkillName = (item: any) => {
+    if (item.skill_name) return item.skill_name;
+    const found = availableSkills.find(s => s.id === item.skill_id);
+    return found ? found.name : `Skill #${item.skill_id}`;
+  };
+
+  const handleAddCustomSkill = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = customSkillInput.trim();
+    if (!clean) return;
+
+    const existing = selectedSkills.find(s => getSkillName(s).toLowerCase() === clean.toLowerCase());
+    if (existing) {
+      toast.info(`"${clean}" is already added.`);
+      setCustomSkillInput('');
+      return;
+    }
+
+    const inCatalog = availableSkills.find(s => s.name?.toLowerCase() === clean.toLowerCase());
+    if (inCatalog) {
+      setSelectedSkills([...selectedSkills, { skill_id: inCatalog.id, skill_name: inCatalog.name, proficiency: 'INTERMEDIATE' }]);
+    } else {
+      setSelectedSkills([...selectedSkills, { skill_name: clean, proficiency: 'INTERMEDIATE' }]);
+    }
+    setCustomSkillInput('');
+  };
+
+  const handleRemoveSkill = (idx: number) => {
+    setSelectedSkills(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const handlePersonalSave = async () => {
     setSavingPersonal(true);
     try { 
       await updateStudentProfile(personal); 
       await addStudentLocations(locations);
-      toast.success('Personal details and locations saved successfully!');
+      if (selectedSkills.length > 0) {
+        await addStudentSkills(selectedSkills);
+      }
+      toast.success('Personal details and skills saved successfully!');
       setIsEditingPersonal(false);
+      loadProfile();
     } catch (e) { 
       toast.error('Error saving personal info'); 
     } finally {
@@ -140,7 +180,8 @@ export default function Profile({ navigate }: ProfileProps) {
   const handleSkillsSave = async () => {
     try { 
       await addStudentSkills(selectedSkills); 
-      toast.success('Skills saved successfully!'); 
+      toast.success('Skills saved successfully! Recommended jobs will update automatically.'); 
+      loadProfile();
     } catch (e) { 
       toast.error('Error saving skills'); 
     }
@@ -691,66 +732,149 @@ export default function Profile({ navigate }: ProfileProps) {
             <Sparkles className="w-5 h-5 text-blue-600" />
             <h2 className="text-lg font-bold text-gray-900">Unified Skills Portfolio</h2>
           </div>
-          <button
-            onClick={handleManualSync}
-            disabled={syncing}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            {syncing ? 'Synchronizing Skills...' : 'AI Sync All Skills'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleManualSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {syncing ? 'Synchronizing Skills...' : 'AI Sync All Skills'}
+            </button>
+            <Button onClick={handleSkillsSave} className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+              Save Skills
+            </Button>
+          </div>
         </div>
 
         <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-900 flex items-start gap-2">
           <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
           <div>
-            The AI engine continuously harmonizes skills from your completed government courses, verified certifications, and self-reported competencies into one verified skill profile.
+            The AI recommendation engine uses these competencies to rank and match jobs on your Dashboard and Suggested Jobs feed.
           </div>
         </div>
 
-        <Input 
-          placeholder="Filter or search available industry skills..." 
-          value={skillSearch} 
-          onChange={(e: any) => setSkillSearch(e.target.value)} 
-        />
-        
-        <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-xl p-2 divide-y divide-gray-100">
-          {availableSkills.filter((s: any) => s.name?.toLowerCase().includes(skillSearch.toLowerCase())).map((skill: any) => {
-            const isSelected = selectedSkills.find(s => s.skill_id === skill.id);
-            return (
-              <div key={skill.id} className="flex items-center justify-between p-2.5 hover:bg-gray-50 rounded-lg">
-                <label className="flex items-center gap-2.5 text-xs text-gray-800 font-medium cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!isSelected}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedSkills([...selectedSkills, { skill_id: skill.id, proficiency: 'BEGINNER' }]);
-                      else setSelectedSkills(selectedSkills.filter(s => s.skill_id !== skill.id));
-                    }}
-                    className="rounded text-blue-600"
-                  />
-                  <span>{skill.name}</span>
-                  <span className="text-[10px] text-gray-400 font-normal">({skill.domain})</span>
-                </label>
-                {isSelected && (
-                  <select
-                    className="border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white text-gray-800 font-medium"
-                    value={isSelected.proficiency}
-                    onChange={(e) => {
-                      setSelectedSkills(selectedSkills.map(s => s.skill_id === skill.id ? { ...s, proficiency: e.target.value } : s));
-                    }}
+        {/* Active Skills Badges */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Your Active Skills ({selectedSkills.length})
+            </span>
+            {selectedSkills.length > 0 && (
+              <span className="text-[11px] text-gray-400">
+                Click &times; to remove any skill
+              </span>
+            )}
+          </div>
+          {selectedSkills.length === 0 ? (
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-center text-xs text-gray-400 italic">
+              No skills added yet. Add custom skills or select from the industry catalog below.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 p-3 bg-gray-50/70 border border-gray-200 rounded-xl max-h-48 overflow-y-auto">
+              {selectedSkills.map((item: any, idx: number) => {
+                const name = getSkillName(item);
+                return (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-blue-200 text-blue-800 rounded-lg text-xs font-semibold shadow-2xs"
                   >
-                    <option value="BEGINNER">Beginner</option>
-                    <option value="INTERMEDIATE">Intermediate</option>
-                    <option value="EXPERT">Expert</option>
-                  </select>
-                )}
-              </div>
-            );
-          })}
+                    <span>{name}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium uppercase">
+                      {item.proficiency || 'INTERMEDIATE'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSkill(idx)}
+                      className="text-gray-400 hover:text-red-600 transition-colors ml-1 cursor-pointer font-bold text-sm"
+                      title="Remove skill"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <div className="flex justify-end pt-1">
-          <Button onClick={handleSkillsSave}>Save Skills</Button>
+
+        {/* Add Custom Skill Form */}
+        <div>
+          <span className="text-xs font-bold text-gray-700 uppercase tracking-wider block mb-1.5">
+            Add Any Skill
+          </span>
+          <form onSubmit={handleAddCustomSkill} className="flex gap-2">
+            <input
+              type="text"
+              value={customSkillInput}
+              onChange={(e) => setCustomSkillInput(e.target.value)}
+              placeholder="Type any skill (e.g. Python, React, CAD, Clinical Nursing, Electric Vehicles)..."
+              className="flex-1 px-3 py-2 text-xs bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Skill</span>
+            </button>
+          </form>
+        </div>
+
+        {/* Select from Standard Catalog */}
+        <div className="space-y-2 pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Browse Platform Skills Catalog
+            </span>
+          </div>
+          <Input 
+            placeholder="Filter catalog..." 
+            value={skillSearch} 
+            onChange={(e: any) => setSkillSearch(e.target.value)} 
+          />
+          
+          <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-xl p-2 divide-y divide-gray-100">
+            {availableSkills.filter((s: any) => s.name?.toLowerCase().includes(skillSearch.toLowerCase())).map((skill: any) => {
+              const isSelected = selectedSkills.find(s => s.skill_id === skill.id || getSkillName(s).toLowerCase() === skill.name?.toLowerCase());
+              return (
+                <div key={skill.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
+                  <label className="flex items-center gap-2 text-xs text-gray-800 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!isSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedSkills([...selectedSkills, { skill_id: skill.id, skill_name: skill.name, proficiency: 'BEGINNER' }]);
+                        else setSelectedSkills(selectedSkills.filter(s => s.skill_id !== skill.id && getSkillName(s).toLowerCase() !== skill.name?.toLowerCase()));
+                      }}
+                      className="rounded text-blue-600"
+                    />
+                    <span>{skill.name}</span>
+                    <span className="text-[10px] text-gray-400 font-normal">({skill.domain})</span>
+                  </label>
+                  {isSelected && (
+                    <select
+                      className="border border-gray-300 rounded-lg px-2 py-0.5 text-xs bg-white text-gray-800 font-medium"
+                      value={isSelected.proficiency || 'INTERMEDIATE'}
+                      onChange={(e) => {
+                        setSelectedSkills(selectedSkills.map(s => (s.skill_id === skill.id || getSkillName(s).toLowerCase() === skill.name?.toLowerCase()) ? { ...s, proficiency: e.target.value } : s));
+                      }}
+                    >
+                      <option value="BEGINNER">Beginner</option>
+                      <option value="INTERMEDIATE">Intermediate</option>
+                      <option value="EXPERT">Expert</option>
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2 border-t border-gray-100">
+          <Button onClick={handleSkillsSave} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold">
+            Save Skills Portfolio
+          </Button>
         </div>
       </section>
 

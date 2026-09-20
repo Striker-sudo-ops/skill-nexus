@@ -439,11 +439,14 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
                   </Button>
                   <Button 
                     type="submit" 
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5"
                     disabled={submittingApply}
                   >
-                    {submittingApply ? <Spinner className="w-4 h-4 mr-2" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
-                    Submit Application
+                    {submittingApply ? (
+                      <><Spinner className="w-4 h-4" /> Submitting...</>
+                    ) : (
+                      <><Send className="w-3.5 h-3.5" /> Submit Application</>
+                    )}
                   </Button>
                 </div>
               </form>

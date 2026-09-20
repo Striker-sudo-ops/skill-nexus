@@ -249,7 +249,7 @@ export default function RecommendedJobs({ onNavigate }: { onNavigate: (page: str
                       <div className="flex flex-wrap gap-1">
                         {reqSkills.slice(0, 4).map((s: any, idx: number) => {
                           const skillName = s.name || s;
-                          const hasSkill = studentSkills.some((sk: any) =>
+                          const hasSkill = s.matched || (item.matched_skills && item.matched_skills.includes(skillName)) || studentSkills.some((sk: any) =>
                             (sk.name || '').toLowerCase() === skillName.toLowerCase()
                           );
                           return (

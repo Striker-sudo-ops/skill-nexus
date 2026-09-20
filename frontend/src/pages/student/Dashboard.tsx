@@ -171,14 +171,31 @@ export default function Dashboard({ navigate }: { navigate: (p: string, params?:
                     </div>
                   )}
 
-                  {/* Required skills chips */}
+                  {/* Required skills chips with match indicator */}
                   {item.required_skills?.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
-                      {item.required_skills.slice(0, 3).map((sk: any, sIdx: number) => (
-                        <span key={sIdx} className="text-[10px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-medium">
-                          {sk.name || sk}
+                      {item.required_skills.slice(0, 4).map((sk: any, sIdx: number) => {
+                        const skillName = sk.name || sk;
+                        const isMatched = sk.matched || (item.matched_skills && item.matched_skills.includes(skillName)) || (profile?.skills || []).some((s: any) => (s.name || '').toLowerCase() === skillName.toLowerCase());
+                        return (
+                          <span
+                            key={sIdx}
+                            className={`text-[10px] px-2 py-0.5 rounded font-medium border flex items-center gap-1 ${
+                              isMatched
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold'
+                                : 'bg-gray-100 text-gray-700 border-gray-200'
+                            }`}
+                          >
+                            {isMatched && <span className="text-emerald-600 font-bold">✓</span>}
+                            <span>{skillName}</span>
+                          </span>
+                        );
+                      })}
+                      {item.required_skills.length > 4 && (
+                        <span className="text-[10px] text-gray-400 self-center pl-0.5">
+                          +{item.required_skills.length - 4}
                         </span>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>

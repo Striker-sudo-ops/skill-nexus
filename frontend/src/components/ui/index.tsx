@@ -79,6 +79,7 @@ export const Spinner = ({ className = '' }: { className?: string }) => (
 export const useToast = () => {
   return {
     success: (msg: string) => alert(`Success: ${msg}`),
-    error: (msg: string) => alert(`Error: ${msg}`)
+    error: (msg: string) => alert(`Error: ${msg}`),
+    info: (msg: string) => alert(msg)
   };
 };

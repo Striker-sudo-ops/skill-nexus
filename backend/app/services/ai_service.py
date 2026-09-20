@@ -172,8 +172,51 @@ def haversine(lat1, lon1, lat2, lon2):
 
 def recommend_jobs(student_id, db):
     from collections import defaultdict
-    from app.models.entities import StudentSkill, StudentLocation, Job, JobSkill, Employer, Skill
+    from app.models.entities import (
+        StudentSkill, StudentLocation, Job, JobSkill, Employer, Skill,
+        StudentCourse, StudentCertificate, StudentResume
+    )
+    
+    # 1. Collect student skill IDs and lowercase names from StudentSkill
     student_skills = set(s.skill_id for s in db.query(StudentSkill.skill_id).filter(StudentSkill.student_id == student_id).all())
+    student_skill_names = set()
+    
+    if student_skills:
+        for sk in db.query(Skill).filter(Skill.id.in_(student_skills)).all():
+            student_skill_names.add(sk.name.lower().strip())
+
+    # Also extract skills from completed courses
+    courses = db.query(StudentCourse).filter(StudentCourse.student_id == student_id).all()
+    for c in courses:
+        if c.gained_skills:
+            for s in c.gained_skills.split(','):
+                if s.strip():
+                    student_skill_names.add(s.strip().lower())
+
+    # Also extract skills from certificates
+    certs = db.query(StudentCertificate).filter(StudentCertificate.student_id == student_id).all()
+    for cr in certs:
+        if cr.gained_skills:
+            for s in cr.gained_skills.split(','):
+                if s.strip():
+                    student_skill_names.add(s.strip().lower())
+
+    # Also scan resume text if present
+    resume = db.query(StudentResume).filter(StudentResume.student_id == student_id).first()
+    if resume and resume.raw_text:
+        text_lower = resume.raw_text.lower()
+        all_skills_db = db.query(Skill).all()
+        for sk in all_skills_db:
+            if sk.name.lower() in text_lower:
+                student_skills.add(sk.id)
+                student_skill_names.add(sk.name.lower().strip())
+
+    # Match names back to skill IDs
+    if student_skill_names:
+        for sk in db.query(Skill).all():
+            if sk.name.lower().strip() in student_skill_names:
+                student_skills.add(sk.id)
+
     loc = db.query(StudentLocation).filter(StudentLocation.student_id == student_id, StudentLocation.is_primary == True).first()
     slat = loc.latitude if loc else None
     slon = loc.longitude if loc else None
@@ -206,24 +249,32 @@ def recommend_jobs(student_id, db):
         employers_map = {e.id: e for e in employers}
 
     results = []
+    has_student_skills = len(student_skills) > 0 or len(student_skill_names) > 0
+
     for j in jobs:
         req_skills = skills_by_job.get(j.id, [])
-        if not req_skills:
-            continue
         req_skill_ids = [s.skill_id for s in req_skills]
-        match_count = len(student_skills.intersection(req_skill_ids))
-        match_pct = (match_count / len(req_skill_ids)) * 100 if req_skill_ids else 0
+        
+        # Calculate matched skills
+        matched_skills = []
+        skill_names = []
+        for rs in req_skills:
+            sk = skills_map.get(rs.skill_id)
+            if sk:
+                is_matched = (rs.skill_id in student_skills) or (sk.name.lower().strip() in student_skill_names)
+                skill_info = {"id": sk.id, "name": sk.name, "is_required": rs.is_required, "matched": is_matched}
+                skill_names.append(skill_info)
+                if is_matched:
+                    matched_skills.append(sk.name)
+
+        match_count = len(matched_skills)
+        match_pct = (match_count / len(req_skills)) * 100 if req_skills else 0
         
         dist = 0
         if slat and slon and j.latitude and j.longitude:
             dist = haversine(slat, slon, j.latitude, j.longitude)
             
         emp = employers_map.get(j.employer_id)
-        skill_names = []
-        for rs in req_skills:
-            sk = skills_map.get(rs.skill_id)
-            if sk:
-                skill_names.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
                 
         results.append({
             "id": j.id,
@@ -240,9 +291,21 @@ def recommend_jobs(student_id, db):
             "openings_count": j.openings_count or 1,
             "sector": j.sector,
             "skill_match_pct": round(match_pct, 1),
+            "match_count": match_count,
+            "matched_skills": matched_skills,
             "distance_km": round(dist, 1),
             "required_skills": skill_names,
         })
         
-    results.sort(key=lambda x: (-x['skill_match_pct'], x['distance_km']))
-    return results[:10]
+    if has_student_skills:
+        # Prioritize jobs matching student skills first (by match count, then match pct, then distance)
+        results.sort(key=lambda x: (
+            0 if x["match_count"] > 0 else 1,
+            -x["match_count"],
+            -x["skill_match_pct"],
+            x["distance_km"]
+        ))
+    else:
+        results.sort(key=lambda x: (-x.get("openings_count", 1), x["distance_km"]))
+
+    return results[:35]
