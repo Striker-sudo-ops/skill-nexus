@@ -90,6 +90,7 @@ export const getCourses = (params?: any) => api.get('/courses', { params });
 export const getCourseById = (id: string | number) => api.get(`/courses/${id}`);
 export const enrollCourse = (id: string | number, data: any) => api.post(`/courses/${id}/enroll`, data);
 export const getMyEnrollment = (id: string | number) => api.get(`/courses/${id}/my-enrollment`);
+export const getMyEnrollments = () => api.get('/courses/my-enrollments');
 
 // â”€â”€ Employer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getEmployerProfile = () => api.get('/employers/profile');

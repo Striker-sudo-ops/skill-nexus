@@ -21,6 +21,16 @@ def get_courses(domain: Optional[str] = None, depth: Optional[str] = None, q: Op
         query = query.filter(or_(Course.title.ilike(f"%{q}%"), Course.skills_offered.ilike(f"%{q}%"), Course.course_code.ilike(f"%{q}%")))
     return query.order_by(desc(Course.industry_demand_alignment)).all()
 
+@router.get('/my-enrollments')
+def get_my_all_enrollments(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'STUDENT':
+        return {}
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        return {}
+    enrollments = db.query(CourseEnrollment).filter(CourseEnrollment.student_id == stu.id).all()
+    return {str(e.course_id): e.status for e in enrollments}
+
 @router.get('/{id}')
 def get_course_detail(id: str, db: Session = Depends(get_db)):
     course = None

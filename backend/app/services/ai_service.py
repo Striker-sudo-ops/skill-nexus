@@ -171,30 +171,57 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 def recommend_jobs(student_id, db):
+    from collections import defaultdict
     from app.models.entities import StudentSkill, StudentLocation, Job, JobSkill, Employer, Skill
-    student_skills = [s.skill_id for s in db.query(StudentSkill).filter(StudentSkill.student_id == student_id).all()]
+    student_skills = set(s.skill_id for s in db.query(StudentSkill.skill_id).filter(StudentSkill.student_id == student_id).all())
     loc = db.query(StudentLocation).filter(StudentLocation.student_id == student_id, StudentLocation.is_primary == True).first()
     slat = loc.latitude if loc else None
     slon = loc.longitude if loc else None
     
     jobs = db.query(Job).filter(Job.is_active == True).all()
+    if not jobs:
+        return []
+
+    job_ids = [j.id for j in jobs]
+    emp_ids = [j.employer_id for j in jobs if j.employer_id]
+
+    # Batch query all JobSkills for active jobs
+    all_job_skills = db.query(JobSkill).filter(JobSkill.job_id.in_(job_ids)).all()
+    skills_by_job = defaultdict(list)
+    skill_ids_to_fetch = set()
+    for js in all_job_skills:
+        skills_by_job[js.job_id].append(js)
+        skill_ids_to_fetch.add(js.skill_id)
+
+    # Batch query all referenced Skills
+    skills_map = {}
+    if skill_ids_to_fetch:
+        skills = db.query(Skill).filter(Skill.id.in_(skill_ids_to_fetch)).all()
+        skills_map = {s.id: s for s in skills}
+
+    # Batch query Employers
+    employers_map = {}
+    if emp_ids:
+        employers = db.query(Employer).filter(Employer.id.in_(emp_ids)).all()
+        employers_map = {e.id: e for e in employers}
+
     results = []
     for j in jobs:
-        req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
+        req_skills = skills_by_job.get(j.id, [])
         if not req_skills:
             continue
         req_skill_ids = [s.skill_id for s in req_skills]
-        match_count = len(set(student_skills).intersection(set(req_skill_ids)))
+        match_count = len(student_skills.intersection(req_skill_ids))
         match_pct = (match_count / len(req_skill_ids)) * 100 if req_skill_ids else 0
         
         dist = 0
         if slat and slon and j.latitude and j.longitude:
             dist = haversine(slat, slon, j.latitude, j.longitude)
             
-        emp = db.query(Employer).filter(Employer.id == j.employer_id).first()
+        emp = employers_map.get(j.employer_id)
         skill_names = []
         for rs in req_skills:
-            sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+            sk = skills_map.get(rs.skill_id)
             if sk:
                 skill_names.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
                 
@@ -202,7 +229,7 @@ def recommend_jobs(student_id, db):
             "id": j.id,
             "title": j.title,
             "description": j.description,
-            "company_name": emp.company_name if emp else "Skill Nexus Partner",
+            "company_name": j.company_name or (emp.company_name if emp else "Skill Nexus Partner"),
             "city": j.city,
             "state": j.state,
             "job_type": j.job_type,
@@ -215,7 +242,6 @@ def recommend_jobs(student_id, db):
             "skill_match_pct": round(match_pct, 1),
             "distance_km": round(dist, 1),
             "required_skills": skill_names,
-            "job": j
         })
         
     results.sort(key=lambda x: (-x['skill_match_pct'], x['distance_km']))

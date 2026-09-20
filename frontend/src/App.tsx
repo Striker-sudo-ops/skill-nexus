@@ -78,18 +78,26 @@ const AppContent = () => {
     if (loading) return;
     if (!isLoggedIn) {
       setCurrentPage('landing');
-    } else if (isLoggedIn && currentPage === 'landing') {
-      if (user?.role === 'ADMIN') {
-        setCurrentPage('admin/dashboard');
-      } else if (user?.role === 'EMPLOYER') {
-        setCurrentPage('employer/dashboard');
-      } else if (user?.role === 'TRAINER') {
-        setCurrentPage('trainer/dashboard');
-      } else {
-        setCurrentPage('student/dashboard');
-      }
+      return;
     }
-  }, [isLoggedIn, user, loading, currentPage]);
+    // Determine the expected dashboard for this role
+    const roleDashboard: Record<string, string> = {
+      ADMIN: 'admin/dashboard',
+      EMPLOYER: 'employer/dashboard',
+      TRAINER: 'trainer/dashboard',
+      STUDENT: 'student/dashboard',
+    };
+    const expectedPrefix = user?.role === 'ADMIN' ? 'admin/'
+      : user?.role === 'EMPLOYER' ? 'employer/'
+      : user?.role === 'TRAINER' ? 'trainer/'
+      : 'student/';
+
+    // Only redirect if we're on 'landing' or on a page belonging to a different role
+    const pageIsWrongRole = currentPage !== 'landing' && !currentPage.startsWith(expectedPrefix);
+    if (currentPage === 'landing' || pageIsWrongRole) {
+      setCurrentPage(roleDashboard[user?.role || 'STUDENT'] || 'student/dashboard');
+    }
+  }, [isLoggedIn, user?.role, loading]);
 
   // First-time login prompt check (strictly once per student account)
   useEffect(() => {

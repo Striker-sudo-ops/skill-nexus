@@ -1,3 +1,4 @@
+from collections import defaultdict
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
@@ -53,28 +54,65 @@ def search_jobs(
     if salary_max is not None:
         query = query.filter(Job.salary_max <= salary_max)
 
-    jobs_all = query.all()
+    target_skills = [int(s) for s in skill_ids.split(',') if s.strip()] if skill_ids else []
+    if target_skills:
+        job_ids_with_skills = [
+            row[0] for row in db.query(JobSkill.job_id)
+            .filter(JobSkill.skill_id.in_(target_skills))
+            .distinct().all()
+        ]
+        query = query.filter(Job.id.in_(job_ids_with_skills))
+
+    # Fast SQL-level pagination when geospatial sorting is not active
+    start = (page - 1) * per_page
+    if not (lat and lng):
+        query = query.order_by(desc(Job.id))
+        page_jobs = query.offset(start).limit(per_page).all()
+    else:
+        # Distance calculation in-memory only when coordinate search is requested
+        jobs_all = query.all()
+        jobs_with_dist = []
+        for j in jobs_all:
+            d = haversine(lat, lng, j.latitude, j.longitude) if (j.latitude and j.longitude) else float('inf')
+            jobs_with_dist.append((d, j))
+        jobs_with_dist.sort(key=lambda x: x[0])
+        page_jobs = [item[1] for item in jobs_with_dist[start:start+per_page]]
+
+    if not page_jobs:
+        return []
+
+    # Batch load JobSkills, Skills, and Employers for only the paginated slice
+    page_job_ids = [j.id for j in page_jobs]
+    page_emp_ids = [j.employer_id for j in page_jobs if j.employer_id]
+
+    job_skills = db.query(JobSkill).filter(JobSkill.job_id.in_(page_job_ids)).all()
+    skills_by_job = defaultdict(list)
+    skill_ids_to_fetch = set()
+    for js in job_skills:
+        skills_by_job[js.job_id].append(js)
+        skill_ids_to_fetch.add(js.skill_id)
+
+    skills_map = {}
+    if skill_ids_to_fetch:
+        skills = db.query(Skill).filter(Skill.id.in_(skill_ids_to_fetch)).all()
+        skills_map = {s.id: s for s in skills}
+
+    employers_map = {}
+    if page_emp_ids:
+        employers = db.query(Employer).filter(Employer.id.in_(page_emp_ids)).all()
+        employers_map = {e.id: e for e in employers}
+
     results = []
-
-    target_skills = [int(s) for s in skill_ids.split(',')] if skill_ids else []
-
-    for j in jobs_all:
-        req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
-        if target_skills:
-            rs_ids = [rs.skill_id for rs in req_skills]
-            if not any(ts in rs_ids for ts in target_skills):
-                continue
-
-        dist = None
-        if lat and lng and j.latitude and j.longitude:
-            dist = haversine(lat, lng, j.latitude, j.longitude)
-
-        emp = db.query(Employer).filter(Employer.id == j.employer_id).first()
+    for j in page_jobs:
+        req_skills = skills_by_job.get(j.id, [])
         skill_objs = []
         for rs in req_skills:
-            sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+            sk = skills_map.get(rs.skill_id)
             if sk:
                 skill_objs.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
+
+        emp = employers_map.get(j.employer_id)
+        dist = haversine(lat, lng, j.latitude, j.longitude) if (lat and lng and j.latitude and j.longitude) else None
 
         results.append({
             "id": j.id,
@@ -97,17 +135,9 @@ def search_jobs(
             "last_seen_at": j.last_seen_at.isoformat() if j.last_seen_at else None,
             "required_skills": skill_objs,
             "distance": dist,
-            "job": j
         })
 
-
-    if lat and lng:
-        results.sort(key=lambda x: x["distance"] if x["distance"] is not None else float('inf'))
-    else:
-        results.sort(key=lambda x: x["id"], reverse=True)
-
-    start = (page - 1) * per_page
-    return results[start:start+per_page]
+    return results
 
 @router.get('/jobs/count')
 def job_count(db: Session = Depends(get_db)):
@@ -122,16 +152,35 @@ def get_saved_jobs(current_user: User = Depends(get_current_user), db: Session =
     if not stu:
         return []
     saved = db.query(SavedJob).filter(SavedJob.student_id == stu.id).order_by(desc(SavedJob.saved_at)).all()
+    if not saved:
+        return []
+
+    saved_job_ids = [s.job_id for s in saved]
+    jobs = db.query(Job).filter(Job.id.in_(saved_job_ids)).all()
+    jobs_map = {j.id: j for j in jobs}
+
+    emp_ids = [j.employer_id for j in jobs if j.employer_id]
+    employers_map = {e.id: e for e in db.query(Employer).filter(Employer.id.in_(emp_ids)).all()} if emp_ids else {}
+
+    job_skills = db.query(JobSkill).filter(JobSkill.job_id.in_(saved_job_ids)).all()
+    skills_by_job = defaultdict(list)
+    skill_ids_to_fetch = set()
+    for js in job_skills:
+        skills_by_job[js.job_id].append(js)
+        skill_ids_to_fetch.add(js.skill_id)
+
+    skills_map = {s.id: s for s in db.query(Skill).filter(Skill.id.in_(skill_ids_to_fetch)).all()} if skill_ids_to_fetch else {}
+
     results = []
     for s in saved:
-        j = db.query(Job).filter(Job.id == s.job_id).first()
+        j = jobs_map.get(s.job_id)
         if not j:
             continue
-        emp = db.query(Employer).filter(Employer.id == j.employer_id).first()
-        req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
+        emp = employers_map.get(j.employer_id)
+        req_skills = skills_by_job.get(j.id, [])
         skill_objs = []
         for rs in req_skills:
-            sk = db.query(Skill).filter(Skill.id == rs.skill_id).first()
+            sk = skills_map.get(rs.skill_id)
             if sk:
                 skill_objs.append({"id": sk.id, "name": sk.name, "is_required": rs.is_required})
         results.append({
@@ -153,7 +202,6 @@ def get_saved_jobs(current_user: User = Depends(get_current_user), db: Session =
             "sector": j.sector,
             "source": j.source,
             "required_skills": skill_objs,
-            "job": j
         })
     return results
 

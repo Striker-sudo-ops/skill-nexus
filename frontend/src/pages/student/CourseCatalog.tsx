@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getCourses, getCourseById, enrollCourse, getMyEnrollment, getStudentProfile } from '../../services/api';
+import { getCourses, getCourseById, enrollCourse, getMyEnrollment, getMyEnrollments, getStudentProfile } from '../../services/api';
 import { Card, Badge, Spinner } from '../../components/ui';
 import { 
   BookOpen, Clock, Users, ArrowRight, Sparkles, CheckCircle2, 
@@ -45,17 +45,15 @@ export default function CourseCatalog() {
 
   const fetchCourses = () => {
     setLoading(true);
-    getCourses()
-      .then(res => {
-        setCourses(res.data);
-        // Check enrollments for each course
-        res.data.forEach((c: any) => {
-          getMyEnrollment(c.id).then(r => {
-            if (r.data?.enrolled) {
-              setEnrolledMap(prev => ({ ...prev, [c.id]: r.data.status || 'Enrolled' }));
-            }
-          }).catch(() => {});
-        });
+    Promise.all([
+      getCourses(),
+      getMyEnrollments().catch(() => ({ data: {} }))
+    ])
+      .then(([coursesRes, enrollRes]) => {
+        setCourses(coursesRes.data);
+        // Batch set enrolled map from single endpoint: { "course_id": "status" }
+        const enrollMap: Record<string, string> = enrollRes.data || {};
+        setEnrolledMap(enrollMap);
       })
       .catch(err => console.error(err))
       .finally(() => setLoading(false));

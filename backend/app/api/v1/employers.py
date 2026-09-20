@@ -53,13 +53,26 @@ def update_profile(req: EmployerProfileUpdate, current_user: User = Depends(get_
 
 @router.get('/jobs')
 def get_my_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from collections import defaultdict
     emp = get_employer(current_user, db)
     jobs = db.query(Job).filter(Job.employer_id == emp.id).order_by(desc(Job.created_at)).all()
-    
+    if not jobs:
+        return []
+
+    job_ids = [j.id for j in jobs]
+    all_job_skills = db.query(JobSkill).filter(JobSkill.job_id.in_(job_ids)).all()
+    skills_by_job = defaultdict(list)
+    skill_ids = set()
+    for js in all_job_skills:
+        skills_by_job[js.job_id].append(js.skill_id)
+        skill_ids.add(js.skill_id)
+
+    skills_map = {s.id: s.name for s in db.query(Skill).filter(Skill.id.in_(skill_ids)).all()} if skill_ids else {}
+
     enriched = []
     for j in jobs:
-        req_skills = db.query(JobSkill).filter(JobSkill.job_id == j.id).all()
-        skills = [db.query(Skill).filter(Skill.id == rs.skill_id).first().name for rs in req_skills if db.query(Skill).filter(Skill.id == rs.skill_id).first()]
+        req_skill_ids = skills_by_job.get(j.id, [])
+        skills = [skills_map[sid] for sid in req_skill_ids if sid in skills_map]
         enriched.append({
             "id": j.id,
             "title": j.title,
