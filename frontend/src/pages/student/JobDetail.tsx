@@ -61,7 +61,9 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
     phone: '',
     education: '',
     city: '',
-    cover_letter: ''
+    linkedin_url: '',
+    github_url: '',
+    resume_attached: false,
   });
 
   useEffect(() => {
@@ -114,13 +116,16 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
       const stu = p.student || p.profile || {};
       const edu = (p.education && p.education[0]) || {};
       const loc = (p.locations && p.locations[0]) || {};
+      const hasResume = !!(p.resume?.raw_text || stu.has_resume);
       setApplyForm({
         full_name: stu.full_name || '',
-        email: p.user?.email || '',
+        email: stu.email || p.user?.email || '',
         phone: stu.phone || '',
         education: edu.degree ? `${edu.degree} in ${edu.field_of_study || 'Technical'}` : '',
         city: loc.city || '',
-        cover_letter: ''
+        linkedin_url: stu.linkedin_url || '',
+        github_url: stu.github_url || '',
+        resume_attached: hasResume,
       });
     } catch {
       // fallback
@@ -316,13 +321,6 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
                   </div>
                 )}
 
-                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 rounded-xl border border-blue-200 dark:border-blue-800 flex items-start gap-2">
-                  <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-blue-600" />
-                  <p>
-                    Your profile details are auto-filled below. You can make adjustments before submitting. Your verified skills will automatically be shared with the hiring team.
-                  </p>
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Full Name *</label>
@@ -382,15 +380,52 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
                   />
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Cover Note to Hiring Team (Optional)</label>
-                  <textarea 
-                    rows={3}
-                    value={applyForm.cover_letter}
-                    onChange={e => setApplyForm({...applyForm, cover_letter: e.target.value})}
-                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
-                    placeholder="Briefly state your relevant skills or why you are excited to join this role..."
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">LinkedIn Profile URL</label>
+                    <input 
+                      type="url"
+                      value={applyForm.linkedin_url}
+                      onChange={e => setApplyForm({...applyForm, linkedin_url: e.target.value})}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                      placeholder="https://linkedin.com/in/yourprofile"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">GitHub Profile URL</label>
+                    <input 
+                      type="url"
+                      value={applyForm.github_url}
+                      onChange={e => setApplyForm({...applyForm, github_url: e.target.value})}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                      placeholder="https://github.com/yourusername"
+                    />
+                  </div>
+                </div>
+
+                {/* Resume attachment */}
+                <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" /> Resume
+                  </label>
+                  {applyForm.resume_attached ? (
+                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span className="font-semibold">Resume will be attached from your profile</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>No resume found on your profile. </span>
+                      <button
+                        type="button"
+                        onClick={() => { setShowApplyModal(false); onNavigate('student/resume-builder'); }}
+                        className="font-bold underline hover:text-amber-900 cursor-pointer"
+                      >
+                        Build your resume →
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">

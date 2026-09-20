@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   getStudentProfile, updateStudentProfile, addStudentLocations, 
-  addStudentEducation, addStudentSkills, addStudentInterests, 
+  addStudentEducation, deleteStudentEducation, addStudentSkills, addStudentInterests, 
   parseResume, getSkills, getSkillDomains, completeCourse, 
   addCertificate, syncSkills 
 } from '../../services/api';
@@ -9,7 +9,7 @@ import { Button, Input, Select, Spinner, useToast } from '../../components/ui';
 import { 
   BookOpen, Award, Sparkles, Plus, ExternalLink, CheckCircle2, 
   User, UploadCloud, FileText, ArrowRight, Camera, Edit3, MapPin, 
-  GraduationCap, Mail, Phone, Calendar, Save
+  GraduationCap, Mail, Phone, Calendar, Save, Trash2, Link, GitBranch
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -24,9 +24,9 @@ export default function Profile({ navigate }: ProfileProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // States for sub-forms
-  const [personal, setPersonal] = useState({ full_name: '', dob: '', gender: '', phone: '' });
+  const [personal, setPersonal] = useState({ full_name: '', dob: '', gender: '', phone: '', email: '', linkedin_url: '', github_url: '' });
   const [locations, setLocations] = useState<any[]>([{ city: '', state: '', pincode: '', is_primary: true, display_order: 1 }]);
-  const [education, setEducation] = useState({ degree: '', field_of_study: '', institution: '', graduation_year: '' });
+  const [educationList, setEducationList] = useState<any[]>([{ degree: '', field_of_study: '', institution: '', graduation_year: '' }]);
   
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<any[]>([]);
@@ -62,11 +62,15 @@ export default function Profile({ navigate }: ProfileProps) {
           full_name: p.profile.full_name,
           dob: p.profile.dob || '',
           gender: p.profile.gender || '',
-          phone: p.profile.phone || ''
+          phone: p.profile.phone || '',
+          email: p.profile.email || p.user?.email || '',
+          linkedin_url: p.profile.linkedin_url || '',
+          github_url: p.profile.github_url || '',
         });
       }
       if (p.locations?.length) setLocations(p.locations);
-      if (p.education?.length) setEducation(p.education[0]);
+      if (p.education?.length) setEducationList(p.education);
+      else setEducationList([{ degree: '', field_of_study: '', institution: '', graduation_year: '' }]);
       if (p.skills) setSelectedSkills(p.skills.map((s: any) => ({ skill_id: s.skill_id || s.id, proficiency: s.proficiency || 'BEGINNER' })));
       if (p.interests) setSelectedDomains(p.interests);
       if (p.completed_courses) setCompletedCourses(p.completed_courses);
@@ -110,10 +114,26 @@ export default function Profile({ navigate }: ProfileProps) {
 
   const handleEduSave = async () => {
     try { 
-      await addStudentEducation(education); 
+      const valid = educationList.filter(e => e.degree || e.institution);
+      await addStudentEducation(valid); 
       toast.success('Education saved successfully!'); 
+      loadProfile();
     } catch (e) { 
       toast.error('Error saving education'); 
+    }
+  };
+
+  const handleDeleteEdu = async (edu: any, idx: number) => {
+    if (edu.id) {
+      try {
+        await deleteStudentEducation(edu.id);
+        toast.success('Education entry removed.');
+        loadProfile();
+      } catch {
+        toast.error('Failed to remove education entry');
+      }
+    } else {
+      setEducationList(prev => prev.filter((_, i) => i !== idx));
     }
   };
 
@@ -188,7 +208,7 @@ export default function Profile({ navigate }: ProfileProps) {
 
   if (loading) return <div className="flex justify-center p-12"><Spinner /></div>;
 
-  const sectionsFilled = [personal.full_name, locations[0]?.city, education.degree, selectedSkills.length, completedCourses.length].filter(Boolean).length;
+  const sectionsFilled = [personal.full_name, locations[0]?.city, educationList[0]?.degree, selectedSkills.length, completedCourses.length].filter(Boolean).length;
   const progress = Math.round((sectionsFilled / 5) * 100);
 
   // Derive initials from full name or default
@@ -245,10 +265,10 @@ export default function Profile({ navigate }: ProfileProps) {
                       {locations[0].city}{locations[0].state ? `, ${locations[0].state}` : ''}
                     </span>
                   )}
-                  {education.degree && (
+                  {educationList[0]?.degree && (
                     <span className="flex items-center gap-1">
                       <GraduationCap className="w-3.5 h-3.5 text-gray-400" />
-                      {education.degree} {education.field_of_study ? `in ${education.field_of_study}` : ''}
+                      {educationList[0].degree} {educationList[0].field_of_study ? `in ${educationList[0].field_of_study}` : ''}
                     </span>
                   )}
                 </div>
@@ -347,6 +367,25 @@ export default function Profile({ navigate }: ProfileProps) {
                 onChange={(e: any) => setPersonal({ ...personal, phone: e.target.value })} 
                 placeholder="+91 9876543210"
               />
+              <Input 
+                label="Email Address" 
+                type="email"
+                value={personal.email} 
+                onChange={(e: any) => setPersonal({ ...personal, email: e.target.value })} 
+                placeholder="e.g. aditya@email.com"
+              />
+              <Input 
+                label="LinkedIn Profile URL" 
+                value={personal.linkedin_url} 
+                onChange={(e: any) => setPersonal({ ...personal, linkedin_url: e.target.value })} 
+                placeholder="https://linkedin.com/in/yourprofile"
+              />
+              <Input 
+                label="GitHub Profile URL" 
+                value={personal.github_url} 
+                onChange={(e: any) => setPersonal({ ...personal, github_url: e.target.value })} 
+                placeholder="https://github.com/yourusername"
+              />
             </div>
 
             {/* Locations in Edit Mode */}
@@ -424,6 +463,22 @@ export default function Profile({ navigate }: ProfileProps) {
               <span className="text-xs text-gray-400 block mb-0.5">Contact Phone</span>
               <span className="font-semibold text-gray-800">{personal.phone || 'Not provided'}</span>
             </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-xs text-gray-400 block mb-0.5 flex items-center gap-1"><Mail className="w-3 h-3" /> Email</span>
+              <span className="font-semibold text-gray-800">{personal.email || 'Not provided'}</span>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-xs text-gray-400 block mb-0.5 flex items-center gap-1"><Link className="w-3 h-3" /> LinkedIn</span>
+              {personal.linkedin_url ? (
+                <a href={personal.linkedin_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline truncate block text-xs">{personal.linkedin_url}</a>
+              ) : <span className="text-gray-400 text-xs italic">Not added</span>}
+            </div>
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-xs text-gray-400 block mb-0.5 flex items-center gap-1"><GitBranch className="w-3 h-3" /> GitHub</span>
+              {personal.github_url ? (
+                <a href={personal.github_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-gray-800 hover:underline truncate block text-xs">{personal.github_url}</a>
+              ) : <span className="text-gray-400 text-xs italic">Not added</span>}
+            </div>
 
             {/* Locations display */}
             <div className="sm:col-span-2 md:col-span-4 p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -456,41 +511,68 @@ export default function Profile({ navigate }: ProfileProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <Select 
-            label="Degree" 
-            options={[
-              { label: 'Select Degree', value: '' },
-              { label: 'B.Tech / B.E.', value: 'B.Tech' }, 
-              { label: 'Diploma', value: 'Diploma' }, 
-              { label: 'BSc / BCA', value: 'BSc' }, 
-              { label: 'M.Tech / ME', value: 'M.Tech' }, 
-              { label: 'Other', value: 'Other' }
-            ]} 
-            value={education.degree} 
-            onChange={(e: any) => setEducation({ ...education, degree: e.target.value })} 
-          />
-          <Input 
-            label="Field of Study" 
-            placeholder="e.g. Computer Engineering"
-            value={education.field_of_study} 
-            onChange={(e: any) => setEducation({ ...education, field_of_study: e.target.value })} 
-          />
-          <Input 
-            label="Institution / University" 
-            placeholder="e.g. Pune Institute of Technology"
-            value={education.institution} 
-            onChange={(e: any) => setEducation({ ...education, institution: e.target.value })} 
-          />
-          <Input 
-            label="Graduation Year" 
-            type="number" 
-            placeholder="e.g. 2025"
-            value={education.graduation_year} 
-            onChange={(e: any) => setEducation({ ...education, graduation_year: e.target.value })} 
-          />
+        <div className="space-y-4">
+          {educationList.map((edu, idx) => (
+            <div key={idx} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 relative">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <Select 
+                  label="Degree" 
+                  options={[
+                    { label: 'Select Degree', value: '' },
+                    { label: 'B.Tech / B.E.', value: 'B.Tech' }, 
+                    { label: 'Diploma', value: 'Diploma' }, 
+                    { label: 'BSc / BCA', value: 'BSc' }, 
+                    { label: 'M.Tech / ME', value: 'M.Tech' }, 
+                    { label: 'ITI', value: 'ITI' }, 
+                    { label: '10th / SSC', value: '10th' }, 
+                    { label: '12th / HSC', value: '12th' }, 
+                    { label: 'Other', value: 'Other' }
+                  ]} 
+                  value={edu.degree} 
+                  onChange={(e: any) => { const l = [...educationList]; l[idx] = { ...l[idx], degree: e.target.value }; setEducationList(l); }} 
+                />
+                <Input 
+                  label="Field of Study" 
+                  placeholder="e.g. Computer Engineering"
+                  value={edu.field_of_study} 
+                  onChange={(e: any) => { const l = [...educationList]; l[idx] = { ...l[idx], field_of_study: e.target.value }; setEducationList(l); }} 
+                />
+                <Input 
+                  label="Institution / University" 
+                  placeholder="e.g. Pune Institute of Technology"
+                  value={edu.institution} 
+                  onChange={(e: any) => { const l = [...educationList]; l[idx] = { ...l[idx], institution: e.target.value }; setEducationList(l); }} 
+                />
+                <Input 
+                  label="Graduation Year" 
+                  type="number" 
+                  placeholder="e.g. 2025"
+                  value={edu.graduation_year} 
+                  onChange={(e: any) => { const l = [...educationList]; l[idx] = { ...l[idx], graduation_year: e.target.value }; setEducationList(l); }} 
+                />
+              </div>
+              {educationList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteEdu(edu, idx)}
+                  className="absolute top-3 right-3 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                  title="Remove this education entry"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
-        <div className="flex justify-end pt-1">
+
+        <div className="flex items-center justify-between pt-1">
+          <button
+            type="button"
+            onClick={() => setEducationList([...educationList, { degree: '', field_of_study: '', institution: '', graduation_year: '' }])}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Another Education
+          </button>
           <Button onClick={handleEduSave}>Save Education</Button>
         </div>
       </section>

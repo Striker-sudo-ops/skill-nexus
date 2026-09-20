@@ -18,6 +18,10 @@ class JobApplyReq(BaseModel):
     education: Optional[str] = None
     city: Optional[str] = None
     cover_letter: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    resume_attached: Optional[bool] = False
+    resume_url: Optional[str] = None
 
 class JobAlertCreate(BaseModel):
     title: Optional[str] = None
@@ -403,8 +407,20 @@ def apply_to_job(job_id: int, req: JobApplyReq, current_user: User = Depends(get
         education=req.education,
         city=req.city,
         cover_letter=req.cover_letter,
+        linkedin_url=req.linkedin_url,
+        github_url=req.github_url,
+        resume_attached=req.resume_attached or False,
+        resume_url=req.resume_url,
         status='PENDING',
     )
+    # Sync candidate social links to profile if not yet saved
+    if req.linkedin_url and not stu.linkedin_url:
+        stu.linkedin_url = req.linkedin_url
+    if req.github_url and not stu.github_url:
+        stu.github_url = req.github_url
+    if req.phone and not stu.phone:
+        stu.phone = req.phone
+
     db.add(application)
     db.commit()
     db.refresh(application)

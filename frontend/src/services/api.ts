@@ -64,6 +64,7 @@ export const getStudentProfile = () => api.get('/students/profile');
 export const updateStudentProfile = (data: any) => api.put('/students/profile', data);
 export const addStudentLocations = (data: any) => api.post('/students/locations', data);
 export const addStudentEducation = (data: any) => api.post('/students/education', data);
+export const deleteStudentEducation = (eduId: number) => api.delete(`/students/education/${eduId}`);
 export const addStudentSkills = (data: any) => api.post('/students/skills', data);
 export const addStudentInterests = (data: any) => api.post('/students/interests', data);
 export const uploadResume = (file: File) => {

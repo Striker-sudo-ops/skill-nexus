@@ -16,9 +16,12 @@ class Student(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'))
     full_name = Column(String)
+    email = Column(String, nullable=True)
     dob = Column(String, nullable=True)
     gender = Column(String, nullable=True)
     phone = Column(String, nullable=True)
+    linkedin_url = Column(String, nullable=True)
+    github_url = Column(String, nullable=True)
     profile_complete_pct = Column(Float, default=0.0)
 
 class StudentLocation(Base):
@@ -189,6 +192,10 @@ class JobApplication(Base):
     education = Column(String, nullable=True)
     city = Column(String, nullable=True)
     cover_letter = Column(Text, nullable=True)
+    linkedin_url = Column(String, nullable=True)
+    github_url = Column(String, nullable=True)
+    resume_attached = Column(Boolean, default=False)
+    resume_url = Column(String, nullable=True)
     status = Column(String, default='PENDING')  # PENDING, CONTACTED, REJECTED
     applied_at = Column(DateTime, default=datetime.utcnow)
     employer_note = Column(Text, nullable=True)

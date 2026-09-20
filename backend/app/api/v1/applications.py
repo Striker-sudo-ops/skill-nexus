@@ -111,6 +111,9 @@ def _serialize_application(app: JobApplication, job: Job, emp: Employer, db: Ses
         "education_history": education_history,
         "certificates": certificates,
         "resume_text": resume_text,
+        "linkedin_url": app.linkedin_url or (stu.linkedin_url if stu else None),
+        "github_url": app.github_url or (stu.github_url if stu else None),
+        "resume_attached": app.resume_attached,
     }
 
 @router.get('/applications/employer')

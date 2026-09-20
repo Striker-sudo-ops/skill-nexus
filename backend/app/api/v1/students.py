@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.entities import (
@@ -7,7 +7,7 @@ from app.models.entities import (
 )
 from app.api.deps import get_current_user
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Union
 from app.services.ai_service import recommend_jobs, resume_parse
 import datetime
 
@@ -82,17 +82,25 @@ def get_profile(current_user: User = Depends(get_current_user), db: Session = De
 
 class ProfileUpdate(BaseModel):
     full_name: str
+    email: Optional[str] = None
     dob: Optional[str] = None
     gender: Optional[str] = None
     phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
 
 @router.put('/profile')
 def update_profile(req: ProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     stu = get_student(current_user, db)
     stu.full_name = req.full_name
-    if req.dob: stu.dob = req.dob
-    if req.gender: stu.gender = req.gender
-    if req.phone: stu.phone = req.phone
+    if req.dob is not None: stu.dob = req.dob
+    if req.gender is not None: stu.gender = req.gender
+    if req.phone is not None: stu.phone = req.phone
+    if req.linkedin_url is not None: stu.linkedin_url = req.linkedin_url
+    if req.github_url is not None: stu.github_url = req.github_url
+    if req.email:
+        stu.email = req.email
+        current_user.email = req.email
     db.commit()
     return {"status": "updated", "profile": stu}
 
@@ -129,20 +137,44 @@ def update_locations(req: List[LocationItem], current_user: User = Depends(get_c
     return {"status": "updated"}
 
 class EducationItem(BaseModel):
+    id: Optional[int] = None
     degree: str
-    field_of_study: str
+    field_of_study: Optional[str] = "General"
     institution: str
-    graduation_year: int
+    graduation_year: Optional[int] = 2024
 
 @router.post('/education')
-def update_education(req: EducationItem, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_education(req: Union[EducationItem, List[EducationItem]], current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     stu = get_student(current_user, db)
-    db.add(StudentEducation(
-        student_id=stu.id, degree=req.degree, field_of_study=req.field_of_study,
-        institution=req.institution, graduation_year=req.graduation_year
-    ))
+    if isinstance(req, list):
+        db.query(StudentEducation).filter(StudentEducation.student_id == stu.id).delete()
+        for item in req:
+            if item.degree or item.institution:
+                db.add(StudentEducation(
+                    student_id=stu.id,
+                    degree=item.degree or 'Degree',
+                    field_of_study=item.field_of_study or 'General',
+                    institution=item.institution or 'Institute',
+                    graduation_year=item.graduation_year or 2024
+                ))
+    else:
+        db.add(StudentEducation(
+            student_id=stu.id,
+            degree=req.degree or 'Degree',
+            field_of_study=req.field_of_study or 'General',
+            institution=req.institution or 'Institute',
+            graduation_year=req.graduation_year or 2024
+        ))
     db.commit()
-    return {"status": "added"}
+    all_edus = db.query(StudentEducation).filter(StudentEducation.student_id == stu.id).all()
+    return {"status": "saved", "education": all_edus}
+
+@router.delete('/education/{edu_id}')
+def delete_education(edu_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stu = get_student(current_user, db)
+    db.query(StudentEducation).filter(StudentEducation.id == edu_id, StudentEducation.student_id == stu.id).delete()
+    db.commit()
+    return {"status": "deleted"}
 
 class SkillItem(BaseModel):
     skill_id: int

@@ -46,6 +46,28 @@ def ensure_schema_compatibility():
                 if 'status' not in course_cols:
                     conn.execute(text("ALTER TABLE courses ADD COLUMN status VARCHAR DEFAULT 'ACTIVE'"))
                 conn.commit()
+        if 'students' in inspector.get_table_names():
+            stu_cols = [c['name'] for c in inspector.get_columns('students')]
+            with engine.connect() as conn:
+                if 'email' not in stu_cols:
+                    conn.execute(text("ALTER TABLE students ADD COLUMN email VARCHAR"))
+                if 'linkedin_url' not in stu_cols:
+                    conn.execute(text("ALTER TABLE students ADD COLUMN linkedin_url VARCHAR"))
+                if 'github_url' not in stu_cols:
+                    conn.execute(text("ALTER TABLE students ADD COLUMN github_url VARCHAR"))
+                conn.commit()
+        if 'job_applications' in inspector.get_table_names():
+            app_cols = [c['name'] for c in inspector.get_columns('job_applications')]
+            with engine.connect() as conn:
+                if 'linkedin_url' not in app_cols:
+                    conn.execute(text("ALTER TABLE job_applications ADD COLUMN linkedin_url VARCHAR"))
+                if 'github_url' not in app_cols:
+                    conn.execute(text("ALTER TABLE job_applications ADD COLUMN github_url VARCHAR"))
+                if 'resume_attached' not in app_cols:
+                    conn.execute(text("ALTER TABLE job_applications ADD COLUMN resume_attached BOOLEAN DEFAULT FALSE"))
+                if 'resume_url' not in app_cols:
+                    conn.execute(text("ALTER TABLE job_applications ADD COLUMN resume_url VARCHAR"))
+                conn.commit()
         # Create any missing tables defined in entities model (dialect-neutral for SQLite and Postgres)
         Base.metadata.create_all(bind=engine)
     except Exception as e:
