@@ -178,6 +178,21 @@ class SavedJob(Base):
     job_id = Column(Integer, ForeignKey('jobs.id'))
     saved_at = Column(DateTime, default=datetime.utcnow)
 
+class JobApplication(Base):
+    __tablename__ = 'job_applications'
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey('jobs.id'))
+    student_id = Column(Integer, ForeignKey('students.id'))
+    full_name = Column(String)
+    email = Column(String)
+    phone = Column(String, nullable=True)
+    education = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    cover_letter = Column(Text, nullable=True)
+    status = Column(String, default='PENDING')  # PENDING, CONTACTED, REJECTED
+    applied_at = Column(DateTime, default=datetime.utcnow)
+    employer_note = Column(Text, nullable=True)
+
 class JobAlert(Base):
     __tablename__ = 'job_alerts'
     id = Column(Integer, primary_key=True)

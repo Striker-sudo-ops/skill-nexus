@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react';
-import { getJobById, getSkillGap, getJobSkillGap, getWhyRecommended, getSavedJobIds, saveJob, unsaveJob } from '../../services/api';
-import { Button, Spinner, Badge, Card } from '../../components/ui';
+import { 
+  getJobById, getSkillGap, getJobSkillGap, getWhyRecommended, 
+  getSavedJobIds, saveJob, unsaveJob, applyToJob, getMyJobApplication, getStudentProfile 
+} from '../../services/api';
+import { Button, Spinner, Badge, Card, Input } from '../../components/ui';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle2, XCircle, ExternalLink, Bookmark, Sparkles, BookOpen, ArrowUpRight } from 'lucide-react';
+import { 
+  CheckCircle2, XCircle, ExternalLink, Bookmark, Sparkles, BookOpen, 
+  ArrowUpRight, Send, Check, X, FileText, User, Mail, Phone, MapPin, 
+  GraduationCap, AlertCircle, MessageSquare, Clock 
+} from 'lucide-react';
 
 function renderFormattedDescription(desc: string) {
   if (!desc) return null;
@@ -41,6 +48,21 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
   const [whyRec, setWhyRec] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
+  
+  // In-portal application state
+  const [appStatus, setAppStatus] = useState<any>(null);
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [submittingApply, setSubmittingApply] = useState(false);
+  const [applySuccess, setApplySuccess] = useState(false);
+  const [applyError, setApplyError] = useState('');
+  const [applyForm, setApplyForm] = useState({
+    full_name: '',
+    email: '',
+    phone: '',
+    education: '',
+    city: '',
+    cover_letter: ''
+  });
 
   useEffect(() => {
     if (!jobId) return;
@@ -48,8 +70,9 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
       getJobById(jobId.toString()),
       isLoggedIn && isStudent ? getJobSkillGap(jobId.toString()).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
       isLoggedIn && isStudent ? getWhyRecommended(jobId.toString()).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
-      isLoggedIn ? getSavedJobIds().catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
-    ]).then(([jobRes, gapRes, whyRes, savedRes]) => {
+      isLoggedIn ? getSavedJobIds().catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+      isLoggedIn && isStudent ? getMyJobApplication(jobId.toString()).catch(() => ({ data: { applied: false } })) : Promise.resolve({ data: { applied: false } })
+    ]).then(([jobRes, gapRes, whyRes, savedRes, appRes]) => {
       // API returns { job: {...}, employer: {...}, company_name: "...", apply_url: "...", required_skills: [...], resources: [...] }
       const raw = jobRes.data;
       const jobObj = raw?.job || raw;
@@ -66,9 +89,68 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
       if (Array.isArray(savedRes?.data)) {
         setIsSaved(savedRes.data.includes(Number(jobId)));
       }
+      if (appRes?.data?.applied) {
+        setAppStatus(appRes.data.application);
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [jobId, isLoggedIn, isStudent]);
+
+  const handleOpenApplyModal = async () => {
+    if (!isLoggedIn) {
+      alert('Please log in as a student to apply for this job.');
+      return;
+    }
+    if (!isStudent) {
+      alert('Only student accounts can apply for jobs.');
+      return;
+    }
+    setShowApplyModal(true);
+    setApplyError('');
+    setApplySuccess(false);
+    try {
+      const res = await getStudentProfile();
+      const p = res.data;
+      const stu = p.student || p.profile || {};
+      const edu = (p.education && p.education[0]) || {};
+      const loc = (p.locations && p.locations[0]) || {};
+      setApplyForm({
+        full_name: stu.full_name || '',
+        email: p.user?.email || '',
+        phone: stu.phone || '',
+        education: edu.degree ? `${edu.degree} in ${edu.field_of_study || 'Technical'}` : '',
+        city: loc.city || '',
+        cover_letter: ''
+      });
+    } catch {
+      // fallback
+    }
+  };
+
+  const handleSubmitApplication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!applyForm.full_name.trim() || !applyForm.email.trim()) {
+      setApplyError('Full Name and Email are required.');
+      return;
+    }
+    setSubmittingApply(true);
+    setApplyError('');
+    try {
+      const res = await applyToJob(jobId, applyForm);
+      setApplySuccess(true);
+      setAppStatus({
+        status: res.data.status || 'PENDING',
+        applied_at: new Date().toISOString()
+      });
+      setTimeout(() => {
+        setShowApplyModal(false);
+      }, 1400);
+    } catch (err: any) {
+      setApplyError(err.response?.data?.detail || 'Failed to submit application. Please try again.');
+    } finally {
+      setSubmittingApply(false);
+    }
+  };
 
   const handleToggleSave = async () => {
     if (!isLoggedIn) {
@@ -92,14 +174,15 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
   if (!job) return <div className="p-12 text-center">Job not found</div>;
 
   const postedDate = job.created_at ? new Date(job.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  const isExternal = !!job.apply_url && !job.apply_url.includes('mailto:');
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
       <Button variant="ghost" onClick={() => onNavigate('student/jobs')} className="mb-4">&larr; Back to Jobs</Button>
       
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-        <h1 className="text-3xl font-extrabold text-gray-900 mb-2">{job.title}</h1>
-        <p className="text-lg text-gray-600 mb-6">
+      <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+        <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2">{job.title}</h1>
+        <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
           {job.company_name}
           {job.city && job.state && <span> &bull; {job.city}, {job.state}</span>}
           {postedDate && <span> &bull; Posted {postedDate}</span>}
@@ -113,25 +196,67 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
           {job.openings_count && <Badge color="gray">{job.openings_count} Openings</Badge>}
         </div>
 
-        <div className="mb-8 border-t border-b border-gray-100 py-6">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4">Job Description & Responsibilities</h2>
+        <div className="mb-8 border-t border-b border-gray-100 dark:border-gray-800 py-6">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-4">Job Description & Responsibilities</h2>
           {renderFormattedDescription(job.description)}
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <Button 
-            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-2 cursor-pointer shadow-sm" 
-            onClick={() => {
-              if (job.apply_url) {
-                window.open(job.apply_url, '_blank', 'noopener,noreferrer');
-              } else {
-                window.open(`mailto:careers@skillnexus.in?subject=Application for ${encodeURIComponent(job.title)}`, '_blank');
-              }
-            }}
-          >
-            <span>{job.apply_url ? 'Apply on Company Website' : 'Apply Now'}</span>
-            {job.apply_url && <ExternalLink className="w-4 h-4" />}
-          </Button>
+          {/* External Company Portal link vs Internal Portal Application */}
+          {isExternal ? (
+            <Button 
+              className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-2 cursor-pointer shadow-sm" 
+              onClick={() => window.open(job.apply_url, '_blank', 'noopener,noreferrer')}
+            >
+              <span>Apply on Company Website</span>
+              <ExternalLink className="w-4 h-4" />
+            </Button>
+          ) : (
+            <>
+              {appStatus ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  {appStatus.status === 'PENDING' && (
+                    <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs font-semibold">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      <span>Application Submitted &bull; Pending Employer Review</span>
+                    </div>
+                  )}
+                  {appStatus.status === 'CONTACTED' && (
+                    <div className="flex items-center gap-3 px-5 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-semibold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Employer Contacted You! Check your inbox for next steps.</span>
+                      <button 
+                        onClick={() => onNavigate('student/inbox')}
+                        className="underline font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 cursor-pointer"
+                      >
+                        View Messages &rarr;
+                      </button>
+                    </div>
+                  )}
+                  {appStatus.status === 'REJECTED' && (
+                    <div className="flex items-center gap-3 px-5 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold">
+                      <AlertCircle className="w-4 h-4 text-gray-500" />
+                      <span>Application Reviewed &bull; Decision details sent to inbox.</span>
+                      <button 
+                        onClick={() => onNavigate('student/inbox')}
+                        className="underline font-bold text-gray-900 dark:text-white cursor-pointer"
+                      >
+                        Read Decision &rarr;
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Button 
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-2 cursor-pointer shadow-sm" 
+                  onClick={handleOpenApplyModal}
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Apply Now</span>
+                </Button>
+              )}
+            </>
+          )}
 
           {isLoggedIn && (
             <button
@@ -147,13 +272,150 @@ export default function JobDetail({ jobId, onNavigate }: { jobId: number, onNavi
             </button>
           )}
 
-          {job.apply_url && (
-            <span className="text-xs text-gray-500">
+          {isExternal && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               Opens application portal for {job.company_name}
             </span>
           )}
         </div>
       </div>
+
+      {/* In-Portal Job Application Modal */}
+      {showApplyModal && (
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-gray-100 dark:border-gray-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Job Application</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{job.title} &bull; {job.company_name}</p>
+              </div>
+              <button 
+                onClick={() => setShowApplyModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {applySuccess ? (
+              <div className="py-8 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center">
+                  <Check className="w-6 h-6" />
+                </div>
+                <h4 className="text-base font-bold text-gray-900 dark:text-white">Application Submitted!</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+                  Your details and profile have been delivered directly to {job.company_name}. You will be contacted via your Skill Nexus Inbox.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitApplication} className="space-y-4 text-xs">
+                {applyError && (
+                  <div className="p-3 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 rounded-xl border border-red-200 dark:border-red-800 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{applyError}</span>
+                  </div>
+                )}
+
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 rounded-xl border border-blue-200 dark:border-blue-800 flex items-start gap-2">
+                  <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-blue-600" />
+                  <p>
+                    Your profile details are auto-filled below. You can make adjustments before submitting. Your verified skills will automatically be shared with the hiring team.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Full Name *</label>
+                    <input 
+                      type="text"
+                      required
+                      value={applyForm.full_name}
+                      onChange={e => setApplyForm({...applyForm, full_name: e.target.value})}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                      placeholder="e.g. Rahul Sharma"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Email Address *</label>
+                    <input 
+                      type="email"
+                      required
+                      value={applyForm.email}
+                      onChange={e => setApplyForm({...applyForm, email: e.target.value})}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                      placeholder="e.g. rahul@example.com"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Phone Number</label>
+                    <input 
+                      type="text"
+                      value={applyForm.phone}
+                      onChange={e => setApplyForm({...applyForm, phone: e.target.value})}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                      placeholder="e.g. +91 9876543210"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Current City</label>
+                    <input 
+                      type="text"
+                      value={applyForm.city}
+                      onChange={e => setApplyForm({...applyForm, city: e.target.value})}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                      placeholder="e.g. Pune, Maharashtra"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Education / Technical Qualification</label>
+                  <input 
+                    type="text"
+                    value={applyForm.education}
+                    onChange={e => setApplyForm({...applyForm, education: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                    placeholder="e.g. Diploma in Electrical Engineering, ITI Welder"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Cover Note to Hiring Team (Optional)</label>
+                  <textarea 
+                    rows={3}
+                    value={applyForm.cover_letter}
+                    onChange={e => setApplyForm({...applyForm, cover_letter: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs"
+                    placeholder="Briefly state your relevant skills or why you are excited to join this role..."
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                  <Button 
+                    variant="ghost" 
+                    type="button" 
+                    onClick={() => setShowApplyModal(false)}
+                    disabled={submittingApply}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
+                    disabled={submittingApply}
+                  >
+                    {submittingApply ? <Spinner className="w-4 h-4 mr-2" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+                    Submit Application
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Why This Job Is Recommended */}
       {whyRec && whyRec.reasons?.length > 0 && (

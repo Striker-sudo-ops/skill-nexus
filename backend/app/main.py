@@ -4,7 +4,7 @@ import asyncio
 from app.db.session import engine, Base, SessionLocal
 from app.db.seed_data import seed
 from app.models import entities
-from app.api.v1 import auth, students, employers, skills, jobs, quiz, admin, courses, trainer, messages, suggestions, feedback
+from app.api.v1 import auth, students, employers, skills, jobs, quiz, admin, courses, trainer, messages, suggestions, feedback, applications
 
 app = FastAPI(title='Skill Nexus API', version='2.0.1')  # force redeploy: DB purged, no mock courses
 
@@ -105,3 +105,4 @@ app.include_router(trainer.router, prefix='/api/v1/trainer', tags=['trainer'])
 app.include_router(messages.router, prefix='/api/v1', tags=['messages'])
 app.include_router(suggestions.router, prefix='/api/v1', tags=['suggestions'])
 app.include_router(feedback.router, prefix='/api/v1', tags=['feedback'])
+app.include_router(applications.router, prefix='/api/v1', tags=['applications'])

@@ -5,11 +5,19 @@ from sqlalchemy import desc, func
 from typing import Optional, List
 from pydantic import BaseModel
 from app.db.session import get_db
-from app.models.entities import Job, JobSkill, Skill, Employer, SkillResource, User, Student, SavedJob, JobAlert
+from app.models.entities import Job, JobSkill, Skill, Employer, SkillResource, User, Student, SavedJob, JobAlert, JobApplication
 from app.services.ai_service import haversine
 from app.api.deps import get_current_user
 
 router = APIRouter()
+
+class JobApplyReq(BaseModel):
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    education: Optional[str] = None
+    city: Optional[str] = None
+    cover_letter: Optional[str] = None
 
 class JobAlertCreate(BaseModel):
     title: Optional[str] = None
@@ -365,6 +373,67 @@ def get_job_alert_matches(alert_id: int, current_user: User = Depends(get_curren
             "job": j
         })
     return results
+
+@router.post('/jobs/{job_id}/apply')
+def apply_to_job(job_id: int, req: JobApplyReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'STUDENT':
+        raise HTTPException(status_code=403, detail="Only students can apply for jobs on the portal")
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        stu = Student(user_id=current_user.id, full_name=req.full_name or current_user.email.split('@')[0], profile_complete_pct=30.0)
+        db.add(stu)
+        db.commit()
+        db.refresh(stu)
+
+    existing = db.query(JobApplication).filter(JobApplication.job_id == job_id, JobApplication.student_id == stu.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="You have already submitted an application for this job")
+
+    application = JobApplication(
+        job_id=job.id,
+        student_id=stu.id,
+        full_name=req.full_name,
+        email=req.email,
+        phone=req.phone,
+        education=req.education,
+        city=req.city,
+        cover_letter=req.cover_letter,
+        status='PENDING',
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+    return {
+        "success": True,
+        "message": "Application submitted successfully",
+        "application_id": application.id,
+        "status": application.status
+    }
+
+@router.get('/jobs/{job_id}/my-application')
+def get_my_job_application(job_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'STUDENT':
+        return {"applied": False}
+    stu = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not stu:
+        return {"applied": False}
+    app = db.query(JobApplication).filter(JobApplication.job_id == job_id, JobApplication.student_id == stu.id).first()
+    if not app:
+        return {"applied": False}
+    return {
+        "applied": True,
+        "application": {
+            "id": app.id,
+            "status": app.status,
+            "applied_at": app.applied_at.isoformat() if app.applied_at else None,
+            "employer_note": app.employer_note
+        }
+    }
 
 @router.get('/jobs/{job_id}')
 def get_job(job_id: int, db: Session = Depends(get_db)):

@@ -46,6 +46,12 @@ export const unsaveJob = (jobId: string | number) => api.delete(`/jobs/${jobId}/
 export const getJobSkillGap = (jobId: string | number) => api.get(`/jobs/${jobId}/skill-gap`);
 export const getWhyRecommended = (jobId: string | number) => api.get(`/jobs/${jobId}/why-recommended`);
 export const getSalaryInsights = () => api.get('/analytics/salary-insights');
+export const applyToJob = (jobId: string | number, data: any) => api.post(`/jobs/${jobId}/apply`, data);
+export const getMyJobApplication = (jobId: string | number) => api.get(`/jobs/${jobId}/my-application`);
+export const getEmployerApplications = (params?: any) => api.get('/applications/employer', { params });
+export const getJobApplications = (jobId: string | number) => api.get(`/applications/employer/${jobId}`);
+export const contactCandidate = (appId: string | number, data: any) => api.post(`/applications/${appId}/contact`, data);
+export const rejectCandidate = (appId: string | number, data: any) => api.post(`/applications/${appId}/reject`, data);
 
 // â”€â”€ Job Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getJobAlerts = () => api.get('/job-alerts');

@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { getEmployerJobs, postEmployerJob, updateEmployerJob, deleteEmployerJob, getSkills } from '../../services/api';
+import { 
+  getEmployerJobs, postEmployerJob, updateEmployerJob, deleteEmployerJob, 
+  getSkills, getEmployerApplications, contactCandidate, rejectCandidate 
+} from '../../services/api';
 import { Button, Input, Select, Spinner, useToast, Card, Badge } from '../../components/ui';
-import { Eye, Edit3, Trash2, Plus, X, Briefcase, MapPin, DollarSign, Clock, Users, CheckCircle2, Search, Sparkles } from 'lucide-react';
+import { 
+  Eye, Edit3, Trash2, Plus, X, Briefcase, MapPin, DollarSign, Clock, 
+  Users, CheckCircle2, Search, Sparkles, Mail, Phone, Send, AlertCircle, 
+  FileText, Check, MessageSquare, ChevronDown, ChevronUp, XCircle, UserCheck 
+} from 'lucide-react';
 
 const jobTypes = [
   { label: 'Full Time', value: 'FULL_TIME' },
@@ -27,6 +34,24 @@ export default function JobPostings() {
   const [editId, setEditId] = useState<string | number | null>(null);
   const [viewJob, setViewJob] = useState<any | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Applications state
+  const [applications, setApplications] = useState<any[]>([]);
+  const [selectedJobForApps, setSelectedJobForApps] = useState<any | null>(null);
+
+  // Contact candidate modal state
+  const [contactingApp, setContactingApp] = useState<any | null>(null);
+  const [contactSubject, setContactSubject] = useState('');
+  const [contactBody, setContactBody] = useState('');
+  const [sendingContact, setSendingContact] = useState(false);
+
+  // Reject candidate modal state
+  const [rejectingApp, setRejectingApp] = useState<any | null>(null);
+  const [rejectMessage, setRejectMessage] = useState('');
+  const [sendingReject, setSendingReject] = useState(false);
+
+  // Expanded resume snippet map
+  const [expandedResumes, setExpandedResumes] = useState<Record<number, boolean>>({});
 
   const initForm = {
     title: '',
@@ -55,8 +80,12 @@ export default function JobPostings() {
 
   const fetchJobs = () => {
     setLoading(true);
-    getEmployerJobs().then(res => {
-      setJobs(res.data);
+    Promise.all([
+      getEmployerJobs().catch(() => ({ data: [] })),
+      getEmployerApplications().catch(() => ({ data: [] }))
+    ]).then(([jobsRes, appsRes]) => {
+      setJobs(jobsRes.data || []);
+      setApplications(appsRes.data || []);
       setLoading(false);
     }).catch(() => setLoading(false));
   };
@@ -177,6 +206,62 @@ export default function JobPostings() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const getJobAppCount = (jobId: number) => {
+    return applications.filter(a => a.job_id === jobId).length;
+  };
+
+  const handleOpenContact = (app: any) => {
+    setContactingApp(app);
+    setContactSubject(`Next Steps: Application for ${app.job_title}`);
+    setContactBody(`Hello ${app.full_name},\n\nThank you for applying for the ${app.job_title} role with our organization. We reviewed your profile and verified skills, and would like to invite you for the next stage.\n\nDetails / Next Steps:\n[Please enter interview time, assessment link, or onboarding details]\n\nPlease let us know your availability.\n\nBest regards,\nHiring Team`);
+  };
+
+  const handleSendContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contactingApp || !contactBody.trim()) return;
+    setSendingContact(true);
+    try {
+      await contactCandidate(contactingApp.id, {
+        subject: contactSubject,
+        body: contactBody
+      });
+      toast.success(`Instructions delivered to ${contactingApp.full_name}'s inbox!`);
+      setApplications(prev => prev.map(a => a.id === contactingApp.id ? { ...a, status: 'CONTACTED', employer_note: contactBody } : a));
+      setContactingApp(null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to send message.');
+    } finally {
+      setSendingContact(false);
+    }
+  };
+
+  const handleOpenReject = (app: any) => {
+    setRejectingApp(app);
+    setRejectMessage(`Hello ${app.full_name},\n\nThank you for taking the time to apply for the ${app.job_title} position. While we appreciate your background and interest, we have chosen to proceed with other candidates whose experience more closely matches our immediate requirements.\n\nWe encourage you to continue enhancing your skills on Skill Nexus and apply for future openings with us.\n\nBest regards,\nHiring Team`);
+  };
+
+  const handleSendReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingApp || !rejectMessage.trim()) return;
+    setSendingReject(true);
+    try {
+      await rejectCandidate(rejectingApp.id, {
+        message: rejectMessage
+      });
+      toast.success(`Decision notification delivered to ${rejectingApp.full_name}'s inbox.`);
+      setApplications(prev => prev.map(a => a.id === rejectingApp.id ? { ...a, status: 'REJECTED', employer_note: rejectMessage } : a));
+      setRejectingApp(null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to submit decision.');
+    } finally {
+      setSendingReject(false);
+    }
+  };
+
+  const toggleResume = (id: number) => {
+    setExpandedResumes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   if (loading && !jobs.length) {
@@ -499,6 +584,20 @@ export default function JobPostings() {
               </div>
 
               <div className="flex items-center gap-2">
+                {getJobAppCount(job.id) > 0 ? (
+                  <button
+                    onClick={() => setSelectedJobForApps(job)}
+                    className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1 hover:bg-indigo-100 transition-colors cursor-pointer"
+                    title="View candidate applications"
+                  >
+                    <Users className="w-3 h-3 text-indigo-600" />
+                    <span>{getJobAppCount(job.id)} {getJobAppCount(job.id) === 1 ? 'Applicant' : 'Applicants'}</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-gray-400 px-2 py-0.5 rounded-full bg-gray-50 border border-gray-100">
+                    0 Applicants
+                  </span>
+                )}
                 <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
                   job.is_active !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-600'
                 }`}>
@@ -533,19 +632,27 @@ export default function JobPostings() {
               ))}
             </div>
 
-            {/* Action Buttons: VIEW, EDIT, DELETE */}
+            {/* Action Buttons: APPLICATIONS, VIEW, EDIT, DELETE */}
             <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-100">
               <button
+                onClick={() => setSelectedJobForApps(job)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Applications ({getJobAppCount(job.id)})</span>
+              </button>
+
+              <button
                 onClick={() => setViewJob(job)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
               >
                 <Eye className="w-3.5 h-3.5" />
-                View Complete Posting
+                View Posting
               </button>
 
               <button
                 onClick={() => openEdit(job)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 Edit Posting
@@ -554,10 +661,10 @@ export default function JobPostings() {
               <button
                 disabled={deletingId === job.id}
                 onClick={() => handleDelete(job.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors ml-auto"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold transition-colors ml-auto cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                {deletingId === job.id ? 'Deleting...' : 'Delete Posting'}
+                {deletingId === job.id ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </Card>
@@ -656,6 +763,312 @@ export default function JobPostings() {
                 Close
               </button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* CANDIDATE APPLICATIONS MODAL */}
+      {selectedJobForApps && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[9999] p-4">
+          <Card className="w-full max-w-4xl p-6 bg-white max-h-[90vh] overflow-y-auto space-y-4 rounded-2xl shadow-2xl">
+            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+              <div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase">
+                  Candidate Applications
+                </span>
+                <h2 className="text-xl font-bold text-gray-900 mt-1">{selectedJobForApps.title}</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedJobForApps.city}, {selectedJobForApps.state} &bull; {selectedJobForApps.openings_count} Openings &bull; {selectedJobForApps.job_type}
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedJobForApps(null)} 
+                className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* List of Applications */}
+            {(() => {
+              const jobApps = applications.filter(a => a.job_id === selectedJobForApps.id);
+              if (!jobApps.length) {
+                return (
+                  <div className="py-12 text-center space-y-2">
+                    <Users className="w-10 h-10 text-gray-300 mx-auto" />
+                    <h3 className="text-sm font-semibold text-gray-700">No applications received yet</h3>
+                    <p className="text-xs text-gray-400 max-w-md mx-auto">
+                      When students apply for this job posting from the portal, their profiles, verified competencies, and contact requests will appear here.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  <div className="text-xs font-semibold text-gray-500 flex justify-between items-center">
+                    <span>Showing {jobApps.length} candidate application{jobApps.length === 1 ? '' : 's'}</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {jobApps.map(app => {
+                      const isExpanded = !!expandedResumes[app.id];
+                      return (
+                        <div 
+                          key={app.id} 
+                          className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-white hover:border-indigo-200 hover:shadow-xs transition-all space-y-3"
+                        >
+                          {/* Top Row: Name, Status Badge, Applied Date */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2">
+                            <div>
+                              <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                <span>{app.full_name}</span>
+                                {app.status === 'PENDING' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5" /> PENDING REVIEW
+                                  </span>
+                                )}
+                                {app.status === 'CONTACTED' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                                    <CheckCircle2 className="w-2.5 h-2.5" /> CONTACTED
+                                  </span>
+                                )}
+                                {app.status === 'REJECTED' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
+                                    <XCircle className="w-2.5 h-2.5" /> REJECTED
+                                  </span>
+                                )}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                                <span className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3 text-gray-400" />
+                                  {app.email}
+                                </span>
+                                {app.phone && (
+                                  <span className="flex items-center gap-1">
+                                    <Phone className="w-3 h-3 text-gray-400" />
+                                    {app.phone}
+                                  </span>
+                                )}
+                                {app.city && (
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="w-3 h-3 text-gray-400" />
+                                    {app.city}
+                                  </span>
+                                )}
+                                {app.education && (
+                                  <span className="flex items-center gap-1">
+                                    <FileText className="w-3 h-3 text-gray-400" />
+                                    {app.education}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-gray-400">
+                              Applied: {app.applied_at ? new Date(app.applied_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recently'}
+                            </div>
+                          </div>
+
+                          {/* Verified Skills */}
+                          {app.skills && app.skills.length > 0 && (
+                            <div>
+                              <span className="text-[11px] font-semibold text-gray-500 block mb-1">Verified Technical Skills:</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {app.skills.map((s: any, i: number) => (
+                                  <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded text-[11px] font-medium">
+                                    {s.name} {s.proficiency ? `(${s.proficiency})` : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Completed Courses */}
+                          {app.completed_courses && app.completed_courses.length > 0 && (
+                            <div>
+                              <span className="text-[11px] font-semibold text-gray-500 block mb-1">Certified Govt / ITI Courses:</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {app.completed_courses.map((c: any, i: number) => (
+                                  <span key={i} className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-100 rounded text-[11px] font-medium">
+                                    {c.title}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Cover Letter */}
+                          {app.cover_letter && (
+                            <div className="p-2.5 bg-white rounded-lg border border-gray-200 text-xs text-gray-700">
+                              <span className="font-semibold text-gray-900 block mb-0.5">Cover Note:</span>
+                              <p className="whitespace-pre-line leading-relaxed">{app.cover_letter}</p>
+                            </div>
+                          )}
+
+                          {/* Resume text snippet */}
+                          {app.resume_text && (
+                            <div>
+                              <button 
+                                onClick={() => toggleResume(app.id)}
+                                className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                              >
+                                <FileText className="w-3 h-3" />
+                                <span>{isExpanded ? 'Hide Resume Snippet' : 'View Candidate Resume Snippet'}</span>
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                              {isExpanded && (
+                                <div className="mt-2 p-3 bg-gray-100 rounded-lg text-[11px] text-gray-700 font-mono whitespace-pre-line max-h-48 overflow-y-auto border border-gray-200">
+                                  {app.resume_text}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Employer decision note / history if already contacted or rejected */}
+                          {app.employer_note && (
+                            <div className="p-2 bg-indigo-50/60 rounded-lg text-[11px] border border-indigo-100 text-indigo-900">
+                              <span className="font-bold">Latest Message Sent to Student:</span>
+                              <p className="mt-0.5 italic whitespace-pre-line">{app.employer_note}</p>
+                            </div>
+                          )}
+
+                          {/* Candidate Actions: Contact & Invite / Reject */}
+                          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+                            <button
+                              onClick={() => handleOpenContact(app)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{app.status === 'CONTACTED' ? 'Send Another Message' : 'Contact & Send Next Steps'}</span>
+                            </button>
+
+                            {app.status !== 'REJECTED' && (
+                              <button
+                                onClick={() => handleOpenReject(app)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Reject Candidate</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="flex justify-end pt-3 border-t border-gray-100">
+              <button 
+                onClick={() => setSelectedJobForApps(null)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Close Applications
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* CONTACT CANDIDATE MODAL */}
+      {contactingApp && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[10000] p-4">
+          <Card className="w-full max-w-lg p-6 bg-white rounded-2xl shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Contact Candidate</h3>
+                <p className="text-xs text-gray-500">To: {contactingApp.full_name} ({contactingApp.email})</p>
+              </div>
+              <button onClick={() => setContactingApp(null)} className="p-1 text-gray-400 hover:text-gray-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendContact} className="space-y-3 text-xs">
+              <div className="p-2.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-[11px] leading-relaxed">
+                This message will be delivered directly to the student&apos;s Skill Nexus Inbox with your interview instructions, next steps, and contact info.
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">Message Subject</label>
+                <input 
+                  type="text"
+                  required
+                  value={contactSubject}
+                  onChange={e => setContactSubject(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">Instructions / Next Steps / Interview Details</label>
+                <textarea 
+                  rows={6}
+                  required
+                  value={contactBody}
+                  onChange={e => setContactBody(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-sans leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                <Button variant="ghost" type="button" onClick={() => setContactingApp(null)} disabled={sendingContact}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold" disabled={sendingContact}>
+                  {sendingContact ? <Spinner className="w-4 h-4 mr-2" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+                  Send to Student Inbox
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* REJECT CANDIDATE MODAL */}
+      {rejectingApp && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[10000] p-4">
+          <Card className="w-full max-w-lg p-6 bg-white rounded-2xl shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-red-600 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4" /> Reject Candidate Application
+                </h3>
+                <p className="text-xs text-gray-500">Applicant: {rejectingApp.full_name} ({rejectingApp.email})</p>
+              </div>
+              <button onClick={() => setRejectingApp(null)} className="p-1 text-gray-400 hover:text-gray-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendReject} className="space-y-3 text-xs">
+              <div className="p-2.5 bg-red-50 text-red-800 rounded-xl border border-red-200 text-[11px] leading-relaxed">
+                Skill Nexus requires sending a respectful explanation to candidate inboxes when rejecting applications to help students learn and improve.
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">Decision Message / Rationale</label>
+                <textarea 
+                  rows={6}
+                  required
+                  value={rejectMessage}
+                  onChange={e => setRejectMessage(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                <Button variant="ghost" type="button" onClick={() => setRejectingApp(null)} disabled={sendingReject}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold" disabled={sendingReject}>
+                  {sendingReject ? <Spinner className="w-4 h-4 mr-2" /> : <XCircle className="w-3.5 h-3.5 mr-1.5" />}
+                  Confirm Rejection & Send Message
+                </Button>
+              </div>
+            </form>
           </Card>
         </div>
       )}
