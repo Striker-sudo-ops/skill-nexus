@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from pydantic import BaseModel
@@ -8,7 +8,8 @@ from datetime import datetime
 from app.db.session import get_db
 from app.models.entities import (
     JobApplication, Job, Employer, Student, StudentSkill, Skill,
-    StudentCourse, Course, StudentResume, Message, User
+    StudentCourse, Course, StudentResume, Message, User,
+    StudentEducation, StudentCertificate, StudentLocation
 )
 from app.api.deps import get_current_user
 
@@ -54,12 +55,38 @@ def _serialize_application(app: JobApplication, job: Job, emp: Employer, db: Ses
                     "grade": sc.grade
                 })
 
-    # Retrieve student resume if uploaded or parsed
+    # Retrieve student's formal education history
+    education_history = []
+    if stu:
+        edus = db.query(StudentEducation).filter(StudentEducation.student_id == stu.id).all()
+        for e in edus:
+            education_history.append({
+                "degree": e.degree,
+                "field_of_study": e.field_of_study,
+                "institution": e.institution,
+                "graduation_year": e.graduation_year
+            })
+
+    # Retrieve student's certificates
+    certificates = []
+    if stu:
+        certs = db.query(StudentCertificate).filter(StudentCertificate.student_id == stu.id).all()
+        for cr in certs:
+            certificates.append({
+                "title": cr.title,
+                "issuer": cr.issuer,
+                "issue_date": cr.issue_date,
+                "credential_id": cr.credential_id,
+                "credential_url": cr.credential_url,
+                "gained_skills": cr.gained_skills
+            })
+
+    # Retrieve full student resume if uploaded or parsed
     resume_text = None
     if stu:
         res = db.query(StudentResume).filter(StudentResume.student_id == stu.id).first()
         if res and res.raw_text:
-            resume_text = res.raw_text[:2000]
+            resume_text = res.raw_text
 
     return {
         "id": app.id,
@@ -81,6 +108,8 @@ def _serialize_application(app: JobApplication, job: Job, emp: Employer, db: Ses
         "employer_note": app.employer_note,
         "skills": student_skills,
         "completed_courses": completed_courses,
+        "education_history": education_history,
+        "certificates": certificates,
         "resume_text": resume_text,
     }
 

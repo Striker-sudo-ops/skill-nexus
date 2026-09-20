@@ -7,7 +7,8 @@ import { Button, Input, Select, Spinner, useToast, Card, Badge } from '../../com
 import { 
   Eye, Edit3, Trash2, Plus, X, Briefcase, MapPin, DollarSign, Clock, 
   Users, CheckCircle2, Search, Sparkles, Mail, Phone, Send, AlertCircle, 
-  FileText, Check, MessageSquare, ChevronDown, ChevronUp, XCircle, UserCheck 
+  FileText, Check, MessageSquare, ChevronDown, ChevronUp, XCircle, UserCheck,
+  Download, Copy, ExternalLink, Award, GraduationCap
 } from 'lucide-react';
 
 const jobTypes = [
@@ -38,6 +39,7 @@ export default function JobPostings() {
   // Applications state
   const [applications, setApplications] = useState<any[]>([]);
   const [selectedJobForApps, setSelectedJobForApps] = useState<any | null>(null);
+  const [viewingResumeApp, setViewingResumeApp] = useState<any | null>(null);
 
   // Contact candidate modal state
   const [contactingApp, setContactingApp] = useState<any | null>(null);
@@ -262,6 +264,45 @@ export default function JobPostings() {
 
   const toggleResume = (id: number) => {
     setExpandedResumes(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleDownloadResume = (app: any) => {
+    let content = app.resume_text;
+    if (!content) {
+      content = `CANDIDATE RESUME - SKILL NEXUS VERIFIED PROFILE\n` +
+        `=======================================================\n` +
+        `Candidate Name : ${app.full_name}\n` +
+        `Email          : ${app.email}\n` +
+        `Phone          : ${app.phone || 'N/A'}\n` +
+        `Location       : ${app.city || 'N/A'}\n` +
+        `Qualification  : ${app.education || 'N/A'}\n` +
+        `Position       : ${app.job_title}\n\n` +
+        `VERIFIED TECHNICAL SKILLS:\n` +
+        (app.skills?.map((s: any) => ` • ${s.name} (${s.proficiency || 'Intermediate'}) [Domain: ${s.domain || 'Tech'}]`).join('\n') || ' • None listed') + '\n\n' +
+        `ACADEMIC EDUCATION:\n` +
+        (app.education_history?.map((e: any) => ` • ${e.degree} in ${e.field_of_study || 'General'} - ${e.institution || 'Institute'} (${e.graduation_year || ''})`).join('\n') || ` • ${app.education || 'Technical Qualification'}`) + '\n\n' +
+        `GOVT / ITI CERTIFIED COURSES:\n` +
+        (app.completed_courses?.map((c: any) => ` • ${c.title} (Grade: ${c.grade || 'Certified'})`).join('\n') || ' • None listed') + '\n\n' +
+        `CERTIFICATIONS & CREDENTIALS:\n` +
+        (app.certificates?.map((c: any) => ` • ${c.title} by ${c.issuer} (${c.issue_date || ''}) [ID: ${c.credential_id || 'N/A'}]`).join('\n') || ' • None listed') + '\n\n' +
+        (app.cover_letter ? `COVER STATEMENT:\n${app.cover_letter}\n\n` : '') +
+        `=======================================================\n` +
+        `Verified by Skill Nexus Platform on ${new Date().toLocaleDateString('en-IN')}`;
+    }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${app.full_name.replace(/\s+/g, '_')}_Resume.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success('Resume downloaded successfully!');
+  };
+
+  const handleCopyResume = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Resume text copied to clipboard!');
   };
 
   if (loading && !jobs.length) {
@@ -935,6 +976,14 @@ export default function JobPostings() {
                           {/* Candidate Actions: Contact & Invite / Reject */}
                           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
                             <button
+                              onClick={() => setViewingResumeApp(app)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>View Full Resume</span>
+                            </button>
+
+                            <button
                               onClick={() => handleOpenContact(app)}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
                             >
@@ -1069,6 +1118,211 @@ export default function JobPostings() {
                 </Button>
               </div>
             </form>
+          </Card>
+        </div>
+      )}
+
+      {/* CANDIDATE FULL RESUME & DOSSIER MODAL */}
+      {viewingResumeApp && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[10001] p-4">
+          <Card className="w-full max-w-3xl p-6 bg-white max-h-[92vh] overflow-y-auto space-y-6 rounded-2xl shadow-2xl">
+            {/* Header / Actions */}
+            <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-extrabold text-gray-900">{viewingResumeApp.full_name}</h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    Verified Candidate
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Applicant for: <strong className="text-gray-700">{viewingResumeApp.job_title}</strong> &bull; Applied: {viewingResumeApp.applied_at ? new Date(viewingResumeApp.applied_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recently'}
+                </p>
+                <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mt-2">
+                  <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-gray-400" /> {viewingResumeApp.email}</span>
+                  {viewingResumeApp.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-gray-400" /> {viewingResumeApp.phone}</span>}
+                  {viewingResumeApp.city && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-gray-400" /> {viewingResumeApp.city}</span>}
+                  {viewingResumeApp.education && <span className="flex items-center gap-1"><GraduationCap className="w-3.5 h-3.5 text-gray-400" /> {viewingResumeApp.education}</span>}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadResume(viewingResumeApp)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                  title="Download Resume as Text File"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </button>
+                <button 
+                  onClick={() => setViewingResumeApp(null)} 
+                  className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Candidate Cover Statement */}
+            {viewingResumeApp.cover_letter && (
+              <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 space-y-1">
+                <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wider">Candidate Statement / Cover Note</h4>
+                <p className="text-xs text-blue-950 leading-relaxed whitespace-pre-line">{viewingResumeApp.cover_letter}</p>
+              </div>
+            )}
+
+            {/* Verified Skills Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Award className="w-4 h-4 text-blue-600" /> Verified Technical Skills
+              </h4>
+              {viewingResumeApp.skills && viewingResumeApp.skills.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {viewingResumeApp.skills.map((s: any, idx: number) => (
+                    <div key={idx} className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between">
+                      <span className="font-semibold text-xs text-gray-800">{s.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">
+                        {s.proficiency || 'INTERMEDIATE'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 italic">No verified skills recorded.</p>
+              )}
+            </div>
+
+            {/* Academic Education History */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                <GraduationCap className="w-4 h-4 text-indigo-600" /> Academic & Formal Education
+              </h4>
+              {viewingResumeApp.education_history && viewingResumeApp.education_history.length > 0 ? (
+                <div className="space-y-2">
+                  {viewingResumeApp.education_history.map((edu: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-start justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-gray-900">{edu.degree} in {edu.field_of_study || 'General'}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">{edu.institution}</div>
+                      </div>
+                      {edu.graduation_year && (
+                        <span className="text-xs font-semibold text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
+                          Class of {edu.graduation_year}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs text-gray-700">
+                  {viewingResumeApp.education || 'Self-reported qualification from application'}
+                </div>
+              )}
+            </div>
+
+            {/* Certified Courses */}
+            {viewingResumeApp.completed_courses && viewingResumeApp.completed_courses.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-purple-600" /> Government & ITI Certified Courses
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {viewingResumeApp.completed_courses.map((c: any, idx: number) => (
+                    <div key={idx} className="p-2.5 bg-purple-50/50 border border-purple-100 rounded-lg">
+                      <div className="font-semibold text-xs text-purple-950">{c.title}</div>
+                      <div className="text-[11px] text-purple-700 mt-0.5 flex justify-between">
+                        <span>{c.domain}</span>
+                        <span className="font-bold">{c.grade || 'Certified'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Certifications & Industry Credentials */}
+            {viewingResumeApp.certificates && viewingResumeApp.certificates.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-600" /> Industry Certifications
+                </h4>
+                <div className="space-y-2">
+                  {viewingResumeApp.certificates.map((cert: any, idx: number) => (
+                    <div key={idx} className="p-2.5 bg-amber-50/40 border border-amber-200 rounded-lg flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-bold text-gray-900">{cert.title}</div>
+                        <div className="text-gray-500 text-[11px] mt-0.5">Issued by {cert.issuer} &bull; {cert.issue_date}</div>
+                      </div>
+                      {cert.credential_id && (
+                        <span className="font-mono text-[10px] text-gray-600 bg-white px-2 py-0.5 rounded border border-gray-200">
+                          ID: {cert.credential_id}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Raw Uploaded Resume Content / Document */}
+            {viewingResumeApp.resume_text && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-gray-600" /> Uploaded Resume Document
+                  </h4>
+                  <button
+                    onClick={() => handleCopyResume(viewingResumeApp.resume_text)}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy Text</span>
+                  </button>
+                </div>
+                <div className="p-4 bg-gray-900 text-gray-100 rounded-xl font-mono text-[11px] leading-relaxed max-h-72 overflow-y-auto whitespace-pre-line shadow-inner">
+                  {viewingResumeApp.resume_text}
+                </div>
+              </div>
+            )}
+
+            {/* Bottom Modal Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-gray-100">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const app = viewingResumeApp;
+                    setViewingResumeApp(null);
+                    handleOpenContact(app);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Contact & Invite Candidate</span>
+                </button>
+
+                {viewingResumeApp.status !== 'REJECTED' && (
+                  <button
+                    onClick={() => {
+                      const app = viewingResumeApp;
+                      setViewingResumeApp(null);
+                      handleOpenReject(app);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold cursor-pointer"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    <span>Reject Candidate</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => setViewingResumeApp(null)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Close Resume
+              </button>
+            </div>
           </Card>
         </div>
       )}
