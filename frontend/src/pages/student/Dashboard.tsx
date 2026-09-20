@@ -180,13 +180,12 @@ export default function Dashboard({ navigate }: { navigate: (p: string, params?:
                         return (
                           <span
                             key={sIdx}
-                            className={`text-[10px] px-2 py-0.5 rounded font-medium border flex items-center gap-1 ${
+                            className={`text-[10px] px-2 py-0.5 rounded font-medium border ${
                               isMatched
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold'
                                 : 'bg-gray-100 text-gray-700 border-gray-200'
                             }`}
                           >
-                            {isMatched && <span className="text-emerald-600 font-bold">✓</span>}
                             <span>{skillName}</span>
                           </span>
                         );

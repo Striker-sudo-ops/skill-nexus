@@ -68,7 +68,7 @@ def ensure_schema_compatibility():
                 if 'resume_url' not in app_cols:
                     conn.execute(text("ALTER TABLE job_applications ADD COLUMN resume_url VARCHAR"))
                 conn.commit()
-        # Create any missing tables defined in entities model (dialect-neutral for SQLite and Postgres)
+        # Create any missing tables defined in entities model (PostgreSQL)
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f'[Schema] Migration notice: {e}')

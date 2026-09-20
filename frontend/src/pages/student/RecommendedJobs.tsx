@@ -255,13 +255,12 @@ export default function RecommendedJobs({ onNavigate }: { onNavigate: (page: str
                           return (
                             <span
                               key={idx}
-                              className={`text-[10px] px-2 py-0.5 rounded-md font-medium flex items-center gap-1 border ${
+                              className={`text-[10px] px-2 py-0.5 rounded-md font-medium border ${
                                 hasSkill
                                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                                   : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
                               }`}
                             >
-                              {hasSkill && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />}
                               {skillName}
                             </span>
                           );
