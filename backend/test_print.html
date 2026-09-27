@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+@page {
+  size: letter portrait;
+  margin: 0;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+}
+#resume-paper {
+  width: 8.5in;
+  margin: 0 auto;
+  padding: 48px;
+  box-sizing: border-box;
+  font-family: serif;
+}
+h1 { text-align: center; margin: 0 0 10px; }
+.footer {
+  position: fixed;
+  bottom: 24px;
+  right: 48px;
+  font-size: 10px;
+  color: #666;
+}
+.footer::after {
+  content: counter(page);
+}
+</style>
+</head>
+<body>
+<div id="resume-paper">
+  <h1>DEMO STUDENT</h1>
+  <p>Test line of resume</p>
+  <div style="height: 1400px; background: #fafafa; border: 1px dashed #ccc; padding: 20px;">
+    <p>Page 1 content...</p>
+    <div style="margin-top: 1000px;">Page 2 content...</div>
+  </div>
+</div>
+<div class="footer">Page </div>
+</body>
+</html>

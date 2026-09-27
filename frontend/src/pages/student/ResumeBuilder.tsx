@@ -155,6 +155,54 @@ export default function ResumeBuilder({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Smart PDF Download ──────────────────────────────────────────────────────
+  // Sets @page margin: 0 so Chrome never adds date / time / URL / page numbers.
+  // If the resume spans > 1 page we inject a temporary @page rule that puts
+  // a page counter in the bottom-right margin using CSS Paged Media counters.
+  const handleDownloadPDF = () => {
+    const paper = document.getElementById('resume-paper');
+    let injectedStyle: HTMLStyleElement | null = null;
+
+    if (paper) {
+      // 11 in × 96 dpi ≈ 1056 px; subtract 0.5 in top+bottom padding (96 px)
+      // so one full page of content ≈ 960 px.  Use 980 as a safe threshold.
+      const isMultiPage = paper.scrollHeight > 980;
+
+      if (isMultiPage) {
+        injectedStyle = document.createElement('style');
+        // Add a small bottom margin only on multi-page resumes so the
+        // page counter has room; use CSS Paged Media @bottom-right box.
+        injectedStyle.textContent = `
+          @media print {
+            @page {
+              margin: 0 0 22pt 0;
+            }
+            @page {
+              @bottom-right {
+                content: counter(page);
+                font-size: 9pt;
+                color: #666;
+                font-family: serif;
+                padding-right: 0.5in;
+              }
+            }
+          }
+        `;
+        document.head.appendChild(injectedStyle);
+      }
+    }
+
+    window.print();
+
+    // Clean up injected style after browser finishes rendering the print dialog
+    setTimeout(() => {
+      if (injectedStyle?.parentNode) {
+        injectedStyle.parentNode.removeChild(injectedStyle);
+      }
+    }, 3000);
+  };
+
+
   const predefinedHeadings = [
     { title: 'Work Experience', type: 'experience' },
     { title: 'Relevant Coursework', type: 'coursework' },
@@ -424,7 +472,7 @@ export default function ResumeBuilder({
           </button>
 
           <button
-            onClick={() => window.print()}
+            onClick={handleDownloadPDF}
             className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />

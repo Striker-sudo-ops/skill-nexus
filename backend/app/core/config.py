@@ -1,6 +1,9 @@
 import os
 from typing import List
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+load_dotenv()
 
 POSTGRES_DB = "postgresql://neondb_owner:npg_DHRas15nlFPk@ep-winter-waterfall-b3sh513r-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 

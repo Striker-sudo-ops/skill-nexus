@@ -30,27 +30,45 @@ body {
 }
 
 @media print {
+  /* Zero page margins — removes Chrome's auto-added date, time, URL and page number */
   @page {
-    size: letter;
-    margin: 10mm 15mm;
+    size: letter portrait;
+    margin: 0;
   }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide all portal chrome; show only the resume */
   body * {
     visibility: hidden;
   }
-  #resume-paper, #resume-paper * {
+
+  #resume-paper,
+  #resume-paper * {
     visibility: visible;
   }
+
   #resume-paper {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    /* Exact US letter width so content matches the on-screen canvas */
+    width: 8.5in !important;
+    /* Mirror the on-screen p-[48px] padding (48px ≈ 0.5in) */
+    padding: 0.5in 0.625in !important;
+    box-sizing: border-box !important;
     box-shadow: none !important;
     border: none !important;
+    /* Cancel any zoom transform applied by the editor slider */
+    transform: none !important;
+    margin: 0 !important;
   }
+
   .no-print {
     display: none !important;
   }
 }
+
