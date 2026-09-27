@@ -155,12 +155,28 @@ export default function ResumeBuilder({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
+  // Live Page Count Estimation
+  const [pageCount, setPageCount] = useState<number>(1);
+
+  React.useEffect(() => {
+    const updatePageCount = () => {
+      const paper = document.getElementById('resume-paper');
+      if (paper) {
+        // Standard US Letter height at 96 DPI is 1056px
+        const pages = Math.max(1, Math.ceil((paper.scrollHeight - 10) / 1056));
+        setPageCount(pages);
+      }
+    };
+    updatePageCount();
+    const timer = setTimeout(updatePageCount, 250);
+    return () => clearTimeout(timer);
+  }, [sections, personal, fontSize, fontFamily]);
+
   // ── Bulletproof PDF Download ────────────────────────────────────────────────
-  // Uses an isolated hidden print iframe containing strictly #resume-paper.
-  // This guarantees:
-  // 1. Zero sidebar or portal UI interference (no right shift or cutoff).
-  // 2. @page margin: 0 removes browser date, time, title, URL, and page numbers.
-  // 3. Exactly identical to View Resume Mode (8.5in wide, centered, 48px padding).
+  // Creates an isolated print mount directly on document.body.
+  // In print mode, body.is-printing-resume completely hides #root (sidebar, header, etc.),
+  // placing the exact unscaled resume at (0, 0) of the physical page with @page margin: 0.
+  // Page number appears ONLY if resume is > 1 page.
   const handleDownloadPDF = () => {
     const paper = document.getElementById('resume-paper');
     if (!paper) {
@@ -168,83 +184,46 @@ export default function ResumeBuilder({
       return;
     }
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
+    const oldMount = document.getElementById('resume-print-mount');
+    if (oldMount) oldMount.remove();
 
-    const doc = iframe.contentWindow?.document;
-    if (!doc) {
-      window.print();
-      return;
+    const printContainer = document.createElement('div');
+    printContainer.id = 'resume-print-mount';
+
+    const paperClone = paper.cloneNode(true) as HTMLElement;
+    paperClone.id = 'resume-paper-print';
+    paperClone.style.transform = 'none';
+    paperClone.style.margin = '0 auto';
+
+    printContainer.appendChild(paperClone);
+
+    // If multi-page: activate page numbering
+    const isMultiPage = paper.scrollHeight > 1056;
+    if (isMultiPage) {
+      document.body.classList.add('is-multi-page');
+      const footer = document.createElement('div');
+      footer.className = 'print-page-number';
+      printContainer.appendChild(footer);
+    } else {
+      document.body.classList.remove('is-multi-page');
     }
 
-    // Clone all stylesheets and Google fonts from the parent window
-    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-      .map(el => el.outerHTML)
-      .join('\n');
+    document.body.appendChild(printContainer);
+    document.body.classList.add('is-printing-resume');
 
-    // Clone paper element and ensure transform scale is removed
-    const paperClone = paper.cloneNode(true) as HTMLElement;
-    paperClone.style.transform = 'none';
-
-    doc.open();
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title></title>
-          ${styles}
-          <style>
-            @page {
-              size: letter portrait;
-              margin: 0;
-            }
-            * {
-              box-sizing: border-box;
-            }
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-              width: 8.5in !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            #resume-paper {
-              width: 8.5in !important;
-              min-height: 11in !important;
-              margin: 0 auto !important;
-              padding: 48px !important;
-              box-sizing: border-box !important;
-              box-shadow: none !important;
-              border: none !important;
-              transform: none !important;
-              background: #ffffff !important;
-              color: #000000 !important;
-            }
-          </style>
-        </head>
-        <body>
-          ${paperClone.outerHTML}
-        </body>
-      </html>
-    `);
-    doc.close();
-
-    iframe.contentWindow?.focus();
     setTimeout(() => {
-      iframe.contentWindow?.print();
-      setTimeout(() => {
-        if (iframe.parentNode) {
-          iframe.parentNode.removeChild(iframe);
-        }
-      }, 2000);
-    }, 250);
+      window.print();
+
+      const cleanup = () => {
+        document.body.classList.remove('is-printing-resume');
+        document.body.classList.remove('is-multi-page');
+        const mount = document.getElementById('resume-print-mount');
+        if (mount) mount.remove();
+      };
+
+      window.addEventListener('afterprint', cleanup, { once: true });
+      setTimeout(cleanup, 2500);
+    }, 60);
   };
 
 
@@ -505,6 +484,19 @@ export default function ResumeBuilder({
             >
               100%
             </button>
+          </div>
+
+          {/* Live Page Length Indicator */}
+          <div 
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border font-medium transition-colors ${
+              pageCount === 1 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                : 'bg-amber-50 text-amber-700 border-amber-200'
+            }`} 
+            title={pageCount === 1 ? 'Optimal 1-page length for student/fresher resumes' : 'Multi-page resume (2+ pages)'}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>{pageCount === 1 ? '1 Page (Optimal)' : `${pageCount} Pages`}</span>
           </div>
 
           <button
@@ -1187,14 +1179,14 @@ export default function ResumeBuilder({
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5pt] text-gray-900 mt-1.5">
                 {personal.phone && (
                   <span className="flex items-center gap-1">
-                    <Phone className="w-3.5 h-3.5 text-gray-900 fill-current inline-block" />
+                    <Phone className="w-3.5 h-3.5 text-gray-900 fill-current inline-block" size={14} style={{ width: 14, height: 14, minWidth: 14 }} />
                     <span>{personal.phone}</span>
                   </span>
                 )}
 
                 {personal.email && (
                   <span className="flex items-center gap-1">
-                    <Mail className="w-3.5 h-3.5 text-gray-900 inline-block" />
+                    <Mail className="w-3.5 h-3.5 text-gray-900 inline-block" size={14} style={{ width: 14, height: 14, minWidth: 14 }} />
                     <span className="text-gray-900">
                       {personal.email}
                     </span>
@@ -1203,7 +1195,7 @@ export default function ResumeBuilder({
 
                 {personal.linkedin && (
                   <span className="flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5 fill-current text-gray-900 inline-block" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 fill-current text-gray-900 inline-block" width="14" height="14" style={{ width: 14, height: 14, minWidth: 14 }} viewBox="0 0 24 24">
                       <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 10.9v8.37H9.2V10.9H6.46M7.83 6.45c-.9 0-1.63.73-1.63 1.63s.73 1.63 1.63 1.63 1.63-.73 1.63-1.63-.73-1.63-1.63-1.63Z" />
                     </svg>
                     <span className="text-gray-900">
@@ -1214,7 +1206,7 @@ export default function ResumeBuilder({
 
                 {personal.github && (
                   <span className="flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5 fill-current text-gray-900 inline-block" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 fill-current text-gray-900 inline-block" width="14" height="14" style={{ width: 14, height: 14, minWidth: 14 }} viewBox="0 0 24 24">
                       <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2Z" />
                     </svg>
                     <span className="text-gray-900">
@@ -1237,7 +1229,7 @@ export default function ResumeBuilder({
                   }}
                 >
                   {/* Section Title with Full-Width Horizontal Rule */}
-                  <div className="border-b border-black pb-0.5 mb-1.5">
+                  <div className="border-b border-black pb-0.5 mb-1.5 break-after-avoid">
                     <h2 
                       className={`text-[11.5pt] tracking-[0.04em] text-gray-950 ${
                         headingStyle.bold ? 'font-bold' : 'font-normal'
@@ -1253,7 +1245,7 @@ export default function ResumeBuilder({
                   {sec.type === 'education' && (
                     <div className="space-y-2">
                       {sec.items?.map((it, idx) => (
-                        <div key={idx} className="leading-tight">
+                        <div key={idx} className="leading-tight resume-item break-inside-avoid">
                           <div className="flex justify-between font-bold text-[10.5pt] text-gray-900">
                             <span>{it.institution}</span>
                             <span className="font-normal text-[10pt] text-gray-800">{it.date}</span>
@@ -1269,14 +1261,14 @@ export default function ResumeBuilder({
 
                   {/* Section Type: RELEVANT COURSEWORK */}
                   {sec.type === 'coursework' && (
-                    <div className="text-[9.5pt] text-gray-900 leading-relaxed pl-1">
+                    <div className="text-[9.5pt] text-gray-900 leading-relaxed pl-1 resume-item break-inside-avoid">
                       {sec.content}
                     </div>
                   )}
 
                   {/* Section Type: TECHNICAL SKILLS */}
                   {sec.type === 'skills' && (
-                    <div className="space-y-1 text-[9.5pt] text-gray-900 pl-1 leading-snug">
+                    <div className="space-y-1 text-[9.5pt] text-gray-900 pl-1 leading-snug resume-item break-inside-avoid">
                       {sec.skillsGroups?.map((sg, idx) => (
                         <div key={idx}>
                           <strong className="font-bold text-gray-950">{sg.category}:</strong>{' '}
@@ -1290,7 +1282,7 @@ export default function ResumeBuilder({
                   {sec.type === 'projects' && (
                     <div className="space-y-2.5">
                       {sec.items?.map((pr, idx) => (
-                        <div key={idx} className="space-y-0.5">
+                        <div key={idx} className="space-y-0.5 resume-item break-inside-avoid">
                           <div className="flex justify-between text-[10pt] leading-tight">
                             <span className="font-bold text-gray-950">{pr.name}</span>
                             <span className="italic text-gray-800 text-[9.5pt]">{pr.tech}</span>
@@ -1309,7 +1301,7 @@ export default function ResumeBuilder({
                   {sec.type === 'certifications' && (
                     <div className="space-y-1 text-[9.5pt]">
                       {sec.items?.map((c, idx) => (
-                        <div key={idx} className="leading-snug">
+                        <div key={idx} className="leading-snug resume-item break-inside-avoid">
                           <div className="font-bold text-gray-950">{c.title}</div>
                           <div className="italic text-gray-800 text-[9pt]">{c.issuer}</div>
                         </div>
@@ -1321,7 +1313,7 @@ export default function ResumeBuilder({
                   {(sec.type === 'extracurricular' || sec.type === 'custom') && (
                     <ul className="list-disc pl-5 space-y-0.5 text-[9pt] text-gray-900 leading-snug">
                       {sec.items?.map((it, idx) => (
-                        <li key={idx}>{it.text || it.title || ''}</li>
+                        <li key={idx} className="resume-item break-inside-avoid">{it.text || it.title || ''}</li>
                       ))}
                     </ul>
                   )}
