@@ -95,21 +95,6 @@ body {
     color: #000000 !important;
   }
 
-  /* Page number ONLY appears when resume spans 2+ pages */
-  body.is-multi-page .print-page-number {
-    position: fixed;
-    bottom: 14px;
-    right: 48px;
-    font-size: 8.5pt;
-    color: #666666;
-    font-family: serif;
-    display: block !important;
-  }
-
-  body.is-multi-page .print-page-number::after {
-    content: "Page " counter(page);
-  }
-
   /* Fallback if Ctrl+P is pressed outside the button */
   body:not(.is-printing-resume) .no-print,
   body:not(.is-printing-resume) aside,

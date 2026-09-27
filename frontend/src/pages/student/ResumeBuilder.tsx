@@ -162,8 +162,12 @@ export default function ResumeBuilder({
     const updatePageCount = () => {
       const paper = document.getElementById('resume-paper');
       if (paper) {
-        // Standard US Letter height at 96 DPI is 1056px
-        const pages = Math.max(1, Math.ceil((paper.scrollHeight - 10) / 1056));
+        // Measure real content height inside the paper
+        const headerEl = paper.querySelector('header');
+        const sectionsEl = paper.querySelector('.space-y-3\\.5');
+        // 960px is printable area on 1 letter page (1056px - 96px top/bottom padding)
+        const contentHeight = (headerEl?.clientHeight || 0) + (sectionsEl?.clientHeight || 0);
+        const pages = Math.max(1, Math.ceil(contentHeight / 960));
         setPageCount(pages);
       }
     };
@@ -176,7 +180,7 @@ export default function ResumeBuilder({
   // Creates an isolated print mount directly on document.body.
   // In print mode, body.is-printing-resume completely hides #root (sidebar, header, etc.),
   // placing the exact unscaled resume at (0, 0) of the physical page with @page margin: 0.
-  // Page number appears ONLY if resume is > 1 page.
+  // Page number appears ONLY if resume is genuinely > 1 page.
   const handleDownloadPDF = () => {
     const paper = document.getElementById('resume-paper');
     if (!paper) {
@@ -196,19 +200,35 @@ export default function ResumeBuilder({
     paperClone.style.margin = '0 auto';
 
     printContainer.appendChild(paperClone);
+    document.body.appendChild(printContainer);
 
-    // If multi-page: activate page numbering
-    const isMultiPage = paper.scrollHeight > 1056;
+    // Accurately check if content exceeds 1 page
+    const headerEl = paper.querySelector('header');
+    const sectionsEl = paper.querySelector('.space-y-3\\.5');
+    const contentHeight = (headerEl?.clientHeight || 0) + (sectionsEl?.clientHeight || 0);
+    const isMultiPage = contentHeight > 960;
+
+    let dynamicPageStyle: HTMLStyleElement | null = null;
     if (isMultiPage) {
-      document.body.classList.add('is-multi-page');
-      const footer = document.createElement('div');
-      footer.className = 'print-page-number';
-      printContainer.appendChild(footer);
-    } else {
-      document.body.classList.remove('is-multi-page');
+      dynamicPageStyle = document.createElement('style');
+      dynamicPageStyle.id = 'print-page-num-override';
+      dynamicPageStyle.textContent = `
+        @media print {
+          @page {
+            margin: 0 0 14mm 0 !important;
+            @bottom-right {
+              content: "Page " counter(page);
+              font-size: 8.5pt;
+              color: #555555;
+              font-family: serif;
+              padding-right: 0.5in;
+            }
+          }
+        }
+      `;
+      document.head.appendChild(dynamicPageStyle);
     }
 
-    document.body.appendChild(printContainer);
     document.body.classList.add('is-printing-resume');
 
     setTimeout(() => {
@@ -216,7 +236,7 @@ export default function ResumeBuilder({
 
       const cleanup = () => {
         document.body.classList.remove('is-printing-resume');
-        document.body.classList.remove('is-multi-page');
+        dynamicPageStyle?.remove();
         const mount = document.getElementById('resume-print-mount');
         if (mount) mount.remove();
       };
