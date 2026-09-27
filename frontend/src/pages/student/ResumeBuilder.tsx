@@ -155,51 +155,96 @@ export default function ResumeBuilder({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Smart PDF Download ──────────────────────────────────────────────────────
-  // Sets @page margin: 0 so Chrome never adds date / time / URL / page numbers.
-  // If the resume spans > 1 page we inject a temporary @page rule that puts
-  // a page counter in the bottom-right margin using CSS Paged Media counters.
+  // ── Bulletproof PDF Download ────────────────────────────────────────────────
+  // Uses an isolated hidden print iframe containing strictly #resume-paper.
+  // This guarantees:
+  // 1. Zero sidebar or portal UI interference (no right shift or cutoff).
+  // 2. @page margin: 0 removes browser date, time, title, URL, and page numbers.
+  // 3. Exactly identical to View Resume Mode (8.5in wide, centered, 48px padding).
   const handleDownloadPDF = () => {
     const paper = document.getElementById('resume-paper');
-    let injectedStyle: HTMLStyleElement | null = null;
-
-    if (paper) {
-      // 11 in × 96 dpi ≈ 1056 px; subtract 0.5 in top+bottom padding (96 px)
-      // so one full page of content ≈ 960 px.  Use 980 as a safe threshold.
-      const isMultiPage = paper.scrollHeight > 980;
-
-      if (isMultiPage) {
-        injectedStyle = document.createElement('style');
-        // Add a small bottom margin only on multi-page resumes so the
-        // page counter has room; use CSS Paged Media @bottom-right box.
-        injectedStyle.textContent = `
-          @media print {
-            @page {
-              margin: 0 0 22pt 0;
-            }
-            @page {
-              @bottom-right {
-                content: counter(page);
-                font-size: 9pt;
-                color: #666;
-                font-family: serif;
-                padding-right: 0.5in;
-              }
-            }
-          }
-        `;
-        document.head.appendChild(injectedStyle);
-      }
+    if (!paper) {
+      window.print();
+      return;
     }
 
-    window.print();
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
 
-    // Clean up injected style after browser finishes rendering the print dialog
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    // Clone all stylesheets and Google fonts from the parent window
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    // Clone paper element and ensure transform scale is removed
+    const paperClone = paper.cloneNode(true) as HTMLElement;
+    paperClone.style.transform = 'none';
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title></title>
+          ${styles}
+          <style>
+            @page {
+              size: letter portrait;
+              margin: 0;
+            }
+            * {
+              box-sizing: border-box;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              width: 8.5in !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            #resume-paper {
+              width: 8.5in !important;
+              min-height: 11in !important;
+              margin: 0 auto !important;
+              padding: 48px !important;
+              box-sizing: border-box !important;
+              box-shadow: none !important;
+              border: none !important;
+              transform: none !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+            }
+          </style>
+        </head>
+        <body>
+          ${paperClone.outerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow?.focus();
     setTimeout(() => {
-      if (injectedStyle?.parentNode) {
-        injectedStyle.parentNode.removeChild(injectedStyle);
-      }
-    }, 3000);
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          iframe.parentNode.removeChild(iframe);
+        }
+      }, 2000);
+    }, 250);
   };
 
 

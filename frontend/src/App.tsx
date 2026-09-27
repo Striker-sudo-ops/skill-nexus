@@ -186,7 +186,7 @@ const AppContent = () => {
 
       {/* Collapsible Sidebar */}
       {isSidebarOpen && (
-        <div className="relative shrink-0 h-full flex">
+        <div className="relative shrink-0 h-full flex no-print">
           <Sidebar 
             currentPage={currentPage} 
             navigate={navigate} 

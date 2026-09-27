@@ -30,7 +30,7 @@ body {
 }
 
 @media print {
-  /* Zero page margins — removes Chrome's auto-added date, time, URL and page number */
+  /* Zero page margins — completely removes Chrome's auto-added date, time, title, URL, and page numbers */
   @page {
     size: letter portrait;
     margin: 0;
@@ -39,36 +39,68 @@ body {
   html, body {
     margin: 0 !important;
     padding: 0 !important;
+    width: 8.5in !important;
+    background: #ffffff !important;
+    overflow: visible !important;
   }
 
-  /* Hide all portal chrome; show only the resume */
+  /* Completely remove sidebar, navbar, buttons, and app shell from layout */
+  .no-print,
+  aside,
+  nav,
+  header {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Reset all layout wrappers so they don't offset or constrain the resume */
+  #root,
+  #root > div,
+  main,
+  main > div,
+  main > div > div {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 8.5in !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+
+  /* Hide everything except resume-paper and its children */
   body * {
     visibility: hidden;
   }
 
   #resume-paper,
   #resume-paper * {
-    visibility: visible;
+    visibility: visible !important;
   }
 
   #resume-paper {
-    position: absolute;
-    left: 0;
-    top: 0;
-    /* Exact US letter width so content matches the on-screen canvas */
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
     width: 8.5in !important;
-    /* Mirror the on-screen p-[48px] padding (48px ≈ 0.5in) */
-    padding: 0.5in 0.625in !important;
+    max-width: 8.5in !important;
+    min-height: 11in !important;
+    margin: 0 auto !important;
+    padding: 48px !important;
     box-sizing: border-box !important;
     box-shadow: none !important;
     border: none !important;
-    /* Cancel any zoom transform applied by the editor slider */
     transform: none !important;
-    margin: 0 !important;
-  }
-
-  .no-print {
-    display: none !important;
+    background: #ffffff !important;
   }
 }
 

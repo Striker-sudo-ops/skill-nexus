@@ -74,7 +74,7 @@ export default function Sidebar({ currentPage, navigate, onClose }: { currentPag
   }
 
   return (
-    <div className="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shadow-xs">
+    <div className="no-print w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shadow-xs">
       {/* Brand Header */}
       <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
